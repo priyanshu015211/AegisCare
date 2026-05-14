@@ -12,3 +12,6 @@ api_router = APIRouter()
 
 api_router.include_router(system_router, prefix="/system", tags=["System"])
 api_router.include_router(patient_router, prefix="/patient", tags=["Patient"])
+from .patient import router as patient_router
+
+__all__ = ["health_router", "system_router", "patient_router"]
