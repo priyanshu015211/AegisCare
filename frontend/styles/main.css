@@ -1,0 +1,41 @@
+/* AegisCare - Clean Healthcare UI */
+
+:root {
+    --bg-primary: #F8F9FA;
+    --bg-surface: #FFFFFF;
+    --text-primary: #1A202C;
+    --text-secondary: #4A5568;
+    --accent-blue: #2B6CB0;
+    --border-color: #E2E8F0;
+}
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+}
+
+.card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 16px;
+}
+
+.metric-card {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+
+.severity-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+}
