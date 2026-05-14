@@ -1,0 +1,34 @@
+# docker/Dockerfile.backend
+# AegisCare — FastAPI Backend
+
+FROM python:3.11-slim
+
+LABEL maintainer="AegisCare Team"
+LABEL description="AegisCare FastAPI Backend"
+
+WORKDIR /app
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Application code
+COPY . .
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Non-root user for security
+RUN useradd -m -u 1000 aegiscare && chown -R aegiscare:aegiscare /app
+USER aegiscare
+
+EXPOSE 8000
+
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

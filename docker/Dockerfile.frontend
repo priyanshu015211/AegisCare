@@ -1,0 +1,28 @@
+# docker/Dockerfile.frontend
+# AegisCare — Streamlit Frontend
+
+FROM python:3.11-slim
+
+LABEL maintainer="AegisCare Team"
+LABEL description="AegisCare Streamlit Frontend"
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir streamlit plotly pandas python-dotenv requests
+
+COPY . .
+
+RUN useradd -m -u 1000 aegiscare && chown -R aegiscare:aegiscare /app
+USER aegiscare
+
+EXPOSE 8501
+
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
