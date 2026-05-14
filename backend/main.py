@@ -2,16 +2,14 @@
 backend/main.py
 
 AegisCare FastAPI application entry point.
-Phase 2A: Backend Foundation Setup — Complete modular foundation.
+Phase 2C: Backend Configuration, Middleware & Error Handling System
 
 This module initializes the FastAPI application with:
 - Structured logging (Loguru)
-- CORS middleware (configurable via .env)
-- Error handling middleware + consistent exception handlers
+- Multiple production-grade middleware (Security, Logging, Timing, CORS, Error Handling)
 - Modular API routing under /api/v1
-- Modern lifespan context manager (replaces deprecated on_event)
+- Modern lifespan context manager
 - Health, root, and system status endpoints
-- Uptime endpoint (debug mode)
 
 Run with:
     uvicorn backend.main:app --reload --port 8000
@@ -32,6 +30,11 @@ from backend.api.api_v1 import api_router
 # Error handling
 from backend.api.middleware.error_handler import ErrorHandlerMiddleware, add_exception_handlers
 
+# Phase 2C Middleware
+from backend.api.middleware.request_logger import RequestLoggerMiddleware
+from backend.api.middleware.timing import TimingMiddleware
+from backend.api.middleware.security_headers import SecurityHeadersMiddleware
+
 # Initialize logging very early
 setup_logging()
 log = get_logger(__name__)
@@ -47,7 +50,6 @@ async def lifespan(app: FastAPI):
     """
     Modern lifespan handler.
     Preferred over @app.on_event in FastAPI >= 0.93+.
-    Place heavy initialization (DB pools, model loading) here in later phases.
     """
     log.info(
         f"AegisCare backend starting | "
@@ -69,8 +71,7 @@ app = FastAPI(
     description=(
         "AegisCare — AI Emergency Escalation & Healthcare Coordination System\n\n"
         "Production-grade backend for overloaded hospitals, rural clinics, "
-        "and emergency triage. Built with FastAPI, structured logging, "
-        "modular routing, and consistent error handling."
+        "and emergency triage."
     ),
     docs_url="/docs" if settings.debug else None,
     redoc_url="/redoc" if settings.debug else None,
@@ -78,10 +79,19 @@ app = FastAPI(
 )
 
 # ============================================================
-# MIDDLEWARE STACK
+# MIDDLEWARE STACK (Order matters - outermost first)
 # ============================================================
 
-# CORS (origins from .env ALLOWED_ORIGINS)
+# 1. Security Headers (should be one of the first)
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 2. Request Logging
+app.add_middleware(RequestLoggerMiddleware)
+
+# 3. Request Timing + Performance header
+app.add_middleware(TimingMiddleware)
+
+# 4. CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -90,10 +100,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Centralized error handling (catches crashes and returns consistent JSON)
+# 5. Error Handling (should be close to the application)
 app.add_middleware(ErrorHandlerMiddleware)
 
-# Explicit exception handlers for HTTPException and generic errors
+# Explicit exception handlers
 add_exception_handlers(app)
 
 
@@ -101,15 +111,12 @@ add_exception_handlers(app)
 # ROUTER INCLUSION
 # ============================================================
 
-# Health & root endpoints (mounted at top level for monitoring tools & simplicity)
 app.include_router(health_router)
-
-# All versioned business routes live under /api/v1
 app.include_router(api_router, prefix="/api/v1")
 
 
 # ============================================================
-# ADDITIONAL DEBUG / OPERATIONS ENDPOINTS
+# DEBUG / OPERATIONS ENDPOINTS
 # ============================================================
 
 @app.get(
@@ -119,7 +126,6 @@ app.include_router(api_router, prefix="/api/v1")
     summary="Application Uptime (debug only)"
 )
 async def get_uptime():
-    """Returns how long the backend has been running. Useful for debugging and health dashboards."""
     uptime_seconds = time.time() - APP_START_TIME
     hours = int(uptime_seconds // 3600)
     minutes = int((uptime_seconds % 3600) // 60)
@@ -131,13 +137,8 @@ async def get_uptime():
     }
 
 
-# ============================================================
-# ENTRYPOINT (for direct python execution)
-# ============================================================
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(
         "backend.main:app",
         host=settings.backend_host,
