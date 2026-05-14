@@ -11,9 +11,12 @@ from pydantic import BaseModel, Field
 
 
 class APIResponse(BaseModel):
-    """Generic API response wrapper (used by many endpoints)."""
-    status: Literal["success", "error"] = "success"
-    message: str = "OK"
+    """
+    Standardized success response format for all AegisCare APIs.
+    All successful responses should follow this structure.
+    """
+    status: Literal["success"] = "success"
+    message: str = "Request completed successfully."
     data: Optional[Any] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
