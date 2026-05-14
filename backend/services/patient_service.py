@@ -1,112 +1,75 @@
 """
 backend/services/patient_service.py
 
-Placeholder Patient Service Layer for AegisCare.
-
-This service contains the business logic for patient analysis and updates.
-Currently uses mock/placeholder logic. Will be replaced with real
-AI + rule engine in later phases (Phase 8, 9, 11).
-
-Design goals:
-- Async ready
-- Clean separation from API layer
-- Easy to swap mock implementation with real one later
+Patient Service - Handles patient-related business logic.
+This is a placeholder service. Real logic will be added in later phases.
 """
 
-import random
-from typing import List
-from backend.core.logging import get_logger
-
-log = get_logger(__name__)
+from typing import List, Dict, Any, Optional
+from backend.services.base_service import BaseService
 
 
-class PatientService:
+class PatientService(BaseService):
     """
-    Service responsible for patient state analysis and risk evaluation.
+    Service responsible for patient data processing and state management.
     """
 
-    async def analyze_patient(
+    def __init__(self):
+        super().__init__()
+
+    async def process(self, patient_id: str, symptoms: List[str], **kwargs) -> Dict[str, Any]:
+        return await self.analyze_symptoms(patient_id, symptoms, **kwargs)
+
+    async def analyze_symptoms(
         self,
         patient_id: str,
         symptoms: List[str],
-        duration: str | None = None,
+        duration: Optional[str] = None,
         language: str = "en"
-    ) -> dict:
-        """
-        Placeholder analysis logic.
-        In future phases this will:
-        - Call Gemini / rule engine
-        - Run Dynamic Emergency Drift Detection
-        - Calculate real confidence + risk
-        """
-        log.info(f"Analyzing patient {patient_id} with symptoms: {symptoms}")
+    ) -> Dict[str, Any]:
+        self.log_info(f"Analyzing symptoms for patient {patient_id}")
 
-        # === PLACEHOLDER RISK SCORING LOGIC ===
-        base_risk = 30
-        symptom_count = len(symptoms)
-
-        # Simple mock scoring (will be replaced)
-        if any(s in ["breathing difficulty", "chest pain", "shortness of breath"] for s in symptoms):
-            base_risk += 35
-        if symptom_count >= 3:
-            base_risk += 15
-        if duration and ("day" in duration.lower() or "week" in duration.lower()):
-            base_risk += 10
-
-        risk_score = min(max(base_risk, 0), 100)
-
-        # Determine severity
-        if risk_score >= 75:
-            severity = "high"
-        elif risk_score >= 50:
-            severity = "medium"
-        else:
-            severity = "low"
-
-        confidence = round(random.uniform(0.65, 0.92), 2)
+        risk_score = self._calculate_placeholder_risk(symptoms, duration)
+        severity = self._determine_severity(risk_score)
 
         return {
             "patient_id": patient_id,
-            "severity": severity,
+            "symptoms": symptoms,
+            "duration": duration,
             "risk_score": risk_score,
-            "confidence": confidence,
-            "message": "Initial assessment completed. (placeholder logic)",
+            "severity": severity,
+            "message": "Placeholder analysis completed."
         }
 
-    async def update_patient_condition(
-        self,
-        patient_id: str,
-        new_symptom: str
-    ) -> dict:
-        """
-        Placeholder update workflow.
-        Simulates condition drift when new symptoms are reported.
-        """
-        log.info(f"Updating patient {patient_id} with new symptom: {new_symptom}")
+    async def update_patient_state(
+        self, patient_id: str, new_symptom: str
+    ) -> Dict[str, Any]:
+        self.log_info(f"Updating patient {patient_id} with new symptom")
 
-        # Simple mock escalation on new critical symptom
-        base_risk = 55
-        if new_symptom in ["breathing difficulty", "chest pain", "unresponsive", "severe bleeding"]:
-            base_risk = 82
-        elif new_symptom in ["fever", "cough"]:
-            base_risk = 62
-
-        risk_score = min(base_risk, 100)
-
-        if risk_score >= 75:
-            severity = "high"
-        elif risk_score >= 50:
-            severity = "medium"
-        else:
-            severity = "low"
+        risk_score = 75 if new_symptom in ["breathing difficulty", "chest pain"] else 55
+        severity = self._determine_severity(risk_score)
 
         return {
             "patient_id": patient_id,
+            "new_symptom": new_symptom,
             "updated_risk_score": risk_score,
             "severity": severity,
-            "message": "Patient condition updated based on new symptom. (placeholder)",
+            "message": "Patient state updated (placeholder)."
         }
 
+    def _calculate_placeholder_risk(self, symptoms: List[str], duration: Optional[str]) -> int:
+        base = 30
+        if any(s in ["breathing difficulty", "chest pain"] for s in symptoms):
+            base += 35
+        if len(symptoms) >= 3:
+            base += 15
+        if duration and "day" in duration.lower():
+            base += 10
+        return min(max(base, 0), 100)
 
-# Singleton instance (can be replaced with proper DI later)
-patient_service = PatientService()
+    def _determine_severity(self, risk_score: int) -> str:
+        if risk_score >= 75:
+            return "high"
+        elif risk_score >= 50:
+            return "medium"
+        return "low"
