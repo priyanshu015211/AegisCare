@@ -17,26 +17,25 @@ class DriftEngine:
     }
 
     def detect_drift(
-        self, 
-        previous_symptoms: List[str], 
-        current_symptoms: List[str]
-    ) -> Dict[str, Any]:
-        
-        previous_critical = set(previous_symptoms) & self.CRITICAL_SYMPTOMS
-        current_critical = set(current_symptoms) & self.CRITICAL_SYMPTOMS
+    self, 
+    previous_symptoms: List[str], 
+    current_symptoms: List[str]
+) -> Dict[str, Any]:
+    
+    previous_set = set(previous_symptoms)
+    current_set = set(current_symptoms)
 
-        new_critical_symptoms = current_critical - previous_critical
-        drift_detected = len(new_critical_symptoms) > 0
+    new_symptoms = current_set - previous_set
+    new_critical = new_symptoms & self.CRITICAL_SYMPTOMS
 
-        escalation_level = "high" if drift_detected else "low"
+    drift_score = len(new_critical) * 40 + len(new_symptoms) * 10
+    drift_detected = drift_score > 30
 
-        return {
-            "drift_detected": drift_detected,
-            "escalation_level": escalation_level,
-            "new_critical_symptoms": list(new_critical_symptoms),
-            "message": (
-                "Patient condition appears to be worsening." 
-                if drift_detected else 
-                "No significant deterioration detected."
-            )
-        }
+    return {
+        "drift_detected": drift_detected,
+        "drift_score": min(drift_score, 100),
+        "escalation_level": "high" if drift_detected else "low",
+        "new_symptoms": list(new_symptoms),
+        "new_critical_symptoms": list(new_critical),
+        "message": "Condition worsening" if drift_detected else "Stable"
+    }
