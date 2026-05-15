@@ -2,11 +2,10 @@
 backend/ai/reasoning/ai_engine.py
 
 Core AI Reasoning Engine using Gemini.
-Handles symptom analysis, adaptive questioning, and structured responses.
 """
 
 import google.generativeai as genai
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any
 from backend.core.config import get_settings
 from backend.core.logging import get_logger
 
@@ -27,11 +26,28 @@ class AIEngine:
         else:
             log.warning("GEMINI_API_KEY not found. AI features will be limited.")
 
-    async def analyze_patient(self, patient_state: Dict[str, Any]) -> Dict[str, Any]:
-    symptoms = patient_state.get("symptoms", [])
-    duration = patient_state.get("duration", "Not specified")
+    async def generate_response(self, prompt: str, max_tokens: int = 512) -> str:
+        if not self.model:
+            return "AI service is currently unavailable. Please configure Gemini API key."
 
-    prompt = f"""
+        try:
+            response = self.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=max_tokens,
+                    temperature=settings.llm_temperature,
+                )
+            )
+            return response.text.strip()
+        except Exception as e:
+            log.error(f"Gemini generation error: {e}")
+            return "I'm having trouble processing your request right now."
+
+    async def analyze_patient(self, patient_state: Dict[str, Any]) -> Dict[str, Any]:
+        symptoms = patient_state.get("symptoms", [])
+        duration = patient_state.get("duration", "Not specified")
+
+        prompt = f"""
 You are a clinical triage assistant.
 
 Symptoms: {', '.join(symptoms)}
@@ -45,31 +61,26 @@ Respond **only** in this JSON format:
 }}
 """
 
-    response_text = await self.generate_response(prompt)
+        response_text = await self.generate_response(prompt)
 
-    # Try to parse JSON from response
-    try:
-        import json
-        # Extract JSON if wrapped in markdown
-        if "```json" in response_text:
-            json_str = response_text.split("```json")[1].split("```")[0].strip()
-        else:
-            json_str = response_text
+        try:
+            import json
+            if "```json" in response_text:
+                json_str = response_text.split("```json")[1].split("```")[0].strip()
+            else:
+                json_str = response_text
 
-        parsed = json.loads(json_str)
-        return {
-            "severity": parsed.get("severity", "medium"),
-            "reasoning": parsed.get("reasoning", response_text),
-            "follow_up_question": parsed.get("follow_up_question", "Can you tell me more?"),
-            "raw_response": response_text
-        }
-    except:
-        # Fallback if JSON parsing fails
-        return {
-            "severity": "medium",
-            "reasoning": response_text,
-            "follow_up_question": "Can you describe your symptoms in more detail?",
-            "raw_response": response_text
-        }
-            "raw_response": response_text
-        }
+            parsed = json.loads(json_str)
+            return {
+                "severity": parsed.get("severity", "medium"),
+                "reasoning": parsed.get("reasoning", response_text),
+                "follow_up_question": parsed.get("follow_up_question", "Can you tell me more?"),
+                "raw_response": response_text
+            }
+        except:
+            return {
+                "severity": "medium",
+                "reasoning": response_text,
+                "follow_up_question": "Can you describe your symptoms in more detail?",
+                "raw_response": response_text
+            }
