@@ -4,6 +4,7 @@ from backend.ai.memory.patient_memory import PatientMemory
 from backend.ai.reasoning.ai_engine import AIEngine
 from backend.ai.reasoning.drift_engine import DriftEngine
 from backend.core.logging import get_logger
+from backend.api.dependencies.services import AI_EngineDep, Drift_EngineDep
 
 log = get_logger(__name__)
 
