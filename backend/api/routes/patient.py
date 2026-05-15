@@ -27,11 +27,11 @@ async def analyze_patient(
 
         return PatientAnalysisResponse(
             patient_id=result["patient_id"],
+            session_id=result.get("session_id"),      # ← Return session_id
             severity=result["severity"],
             risk_score=result["risk_score"],
             confidence=0.82,
             message=result["message"],
-            # We can extend the response model later to include session_id
         )
     except Exception as e:
         log.error(f"Error in patient analysis: {e}")
