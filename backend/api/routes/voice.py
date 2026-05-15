@@ -16,7 +16,13 @@ async def transcribe_audio(
     file: UploadFile = File(...),
     language: str = Form(default="en")
 ):
+    if not file.content_type.startswith("audio/"):
+        raise HTTPException(status_code=400, detail="Only audio files are allowed")
+
     audio_bytes = await file.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+
     text = await whisper_engine.transcribe(audio_bytes, language=language)
     return {"status": "success", "transcription": text, "language": language}
 
