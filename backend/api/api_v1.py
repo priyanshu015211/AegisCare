@@ -10,6 +10,9 @@ from .routes.system import router as system_router
 from .routes.patient import router as patient_router
 from .routes.ai import router as ai_router
 from .routes.voice import router as voice_router
+from .routes.report import router as report_router
+
+api_router.include_router(report_router, prefix="/report", tags=["Reports"])
 
 api_router = APIRouter()
 
