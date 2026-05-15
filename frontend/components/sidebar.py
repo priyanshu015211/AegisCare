@@ -8,6 +8,9 @@ def render_sidebar():
 
         st.markdown("---")
 
+        # Get current page from session state
+        current = st.session_state.get("current_page", "Dashboard")
+
         page = st.radio(
             label="Navigation",
             options=[
@@ -17,13 +20,16 @@ def render_sidebar():
                 "Coordination Dashboard",
                 "Analytics"
             ],
-            index=0,
+            index=["Dashboard", "Patient Triage", "Emergency Center", "Coordination Dashboard", "Analytics"].index(current)
+            if current in ["Dashboard", "Patient Triage", "Emergency Center", "Coordination Dashboard", "Analytics"] else 0,
             label_visibility="collapsed"
         )
+
+        # Save selected page
+        st.session_state["current_page"] = page
 
         st.markdown("---")
         st.subheader("System Status")
         st.success("Backend: Connected", icon="🟢")
-        st.caption("v0.2.0 • Phase 6+7")
 
         return page
