@@ -1,10 +1,8 @@
 from fastapi import APIRouter, HTTPException, status, Depends
 from backend.schemas.patient import PatientAnalyzeRequest
 from backend.ai.memory.patient_memory import PatientMemory
-from backend.ai.reasoning.ai_engine import AIEngine
-from backend.ai.reasoning.drift_engine import DriftEngine
 from backend.core.logging import get_logger
-from backend.api.dependencies.services import AI_EngineDep, Drift_EngineDep
+from backend.api.dependencies.services import get_ai_engine, get_drift_engine
 
 log = get_logger(__name__)
 
@@ -14,7 +12,7 @@ router = APIRouter(prefix="/ai", tags=["AI"])
 @router.post("/analyze")
 async def analyze_patient(
     request: PatientAnalyzeRequest,
-    ai_engine: AIEngine = Depends(get_ai_engine)
+    ai_engine=Depends(get_ai_engine)
 ):
     try:
         memory = PatientMemory(request.patient_id)
