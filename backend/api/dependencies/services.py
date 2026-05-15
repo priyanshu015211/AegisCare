@@ -12,7 +12,8 @@ from fastapi import Depends
 from backend.services.patient_service import PatientService
 from backend.services.risk_service import RiskScoringService
 from backend.services.drift_service import DriftDetectionService
-
+from backend.ai.reasoning.ai_engine import AIEngine
+from backend.ai.reasoning.drift_engine import DriftEngine
 
 # ============================================================
 # Service Providers (Cached using lru_cache)
@@ -34,7 +35,17 @@ def get_risk_service() -> RiskScoringService:
 def get_drift_service() -> DriftDetectionService:
     """Returns a cached instance of DriftDetectionService."""
     return DriftDetectionService()
+@lru_cache()
+def get_ai_engine() -> AIEngine:
+    return AIEngine()
 
+@lru_cache()
+def get_drift_engine() -> DriftEngine:
+    return DriftEngine()
+
+
+AI_EngineDep = Annotated[AIEngine, Depends(get_ai_engine)]
+Drift_EngineDep = Annotated[DriftEngine, Depends(get_drift_engine)]
 
 # ============================================================
 # Type Aliases for Clean Usage in Routes
