@@ -12,8 +12,7 @@ log = get_logger(__name__)
 class AppointmentManager:
     def __init__(self):
         self.appointments: List[Dict] = []
-     
-    from typing import List, Dict, Any, Optional
+
     async def book_appointment(
         self, 
         patient_id: str, 
