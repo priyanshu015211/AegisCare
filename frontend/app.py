@@ -2,13 +2,26 @@ import streamlit as st
 from frontend.styles.theme import apply_custom_css
 from frontend.components.sidebar import render_sidebar
 
-from frontend.pages import dashboard, patient_triage, emergency_center, coordination_dashboard, analytics
+# Import pages
+from frontend.pages import (
+    dashboard,
+    patient_triage,
+    emergency_center,
+    coordination_dashboard,
+    analytics
+)
 
-st.set_page_config(page_title="AegisCare", page_icon="🏥", layout="wide")
+st.set_page_config(
+    page_title="AegisCare",
+    page_icon="🏥",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
 apply_custom_css()
 current_page = render_sidebar()
 
+# Page Routing
 if current_page == "Dashboard":
     dashboard.show_dashboard()
 elif current_page == "Patient Triage":
