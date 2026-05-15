@@ -27,69 +27,49 @@ class AIEngine:
         else:
             log.warning("GEMINI_API_KEY not found. AI features will be limited.")
 
-    async def generate_response(self, prompt: str, max_tokens: int = 512) -> str:
-        if not self.model:
-            return "AI service is currently unavailable. Please configure Gemini API key."
-
-        try:
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=max_tokens,
-                    temperature=settings.llm_temperature,
-                )
-            )
-            return response.text.strip()
-        except Exception as e:
-            log.error(f"Gemini generation error: {e}")
-            return "I'm having trouble processing your request right now."
-
     async def analyze_patient(self, patient_state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Main method for analyzing patient symptoms using Gemini.
-        """
-        symptoms = patient_state.get("symptoms", [])
-        duration = patient_state.get("duration", "Not specified")
+    symptoms = patient_state.get("symptoms", [])
+    duration = patient_state.get("duration", "Not specified")
 
-        prompt = f"""
-You are an experienced clinical triage assistant.
+    prompt = f"""
+You are a clinical triage assistant.
 
-Patient Information:
-- Symptoms: {', '.join(symptoms)}
-- Duration: {duration}
+Symptoms: {', '.join(symptoms)}
+Duration: {duration}
 
-Task:
-1. Assess the current severity level (Low / Medium / High / Critical)
-2. Give a short clinical reasoning (1-2 sentences)
-3. Suggest ONE important follow-up question to ask the patient
-
-Respond in this exact format:
-Severity: <Low/Medium/High/Critical>
-Reasoning: <your reasoning>
-Follow-up Question: <one clear question>
+Respond **only** in this JSON format:
+{{
+  "severity": "low" | "medium" | "high" | "critical",
+  "reasoning": "short explanation",
+  "follow_up_question": "one relevant question"
+}}
 """
 
-        response_text = await self.generate_response(prompt)
+    response_text = await self.generate_response(prompt)
 
-        # Basic parsing (can be improved later)
-        severity = "medium"
-        reasoning = response_text
-        follow_up = "Can you describe your symptoms in more detail?"
+    # Try to parse JSON from response
+    try:
+        import json
+        # Extract JSON if wrapped in markdown
+        if "```json" in response_text:
+            json_str = response_text.split("```json")[1].split("```")[0].strip()
+        else:
+            json_str = response_text
 
-        if "Severity:" in response_text:
-            try:
-                lines = response_text.split("\n")
-                for line in lines:
-                    if "Severity:" in line:
-                        severity = line.split(":")[1].strip().lower()
-                    if "Follow-up Question:" in line:
-                        follow_up = line.split(":", 1)[1].strip()
-            except:
-                pass
-
+        parsed = json.loads(json_str)
         return {
-            "severity": severity,
-            "reasoning": reasoning,
-            "follow_up_question": follow_up,
+            "severity": parsed.get("severity", "medium"),
+            "reasoning": parsed.get("reasoning", response_text),
+            "follow_up_question": parsed.get("follow_up_question", "Can you tell me more?"),
+            "raw_response": response_text
+        }
+    except:
+        # Fallback if JSON parsing fails
+        return {
+            "severity": "medium",
+            "reasoning": response_text,
+            "follow_up_question": "Can you describe your symptoms in more detail?",
+            "raw_response": response_text
+        }
             "raw_response": response_text
         }
