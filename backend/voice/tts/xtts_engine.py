@@ -10,6 +10,26 @@ from backend.core.logging import get_logger
 log = get_logger(__name__)
 settings = get_settings()
 
+def __init__(self, model_size: str = None):
+    self.model_size = model_size or settings.whisper_model_size
+    self.model = None
+
+    if WHISPER_AVAILABLE:
+        try:
+            self.model = WhisperModel(
+                self.model_size,
+                device=settings.whisper_device,
+                compute_type=settings.whisper_compute_type
+            )
+            log.info(f"Whisper '{self.model_size}' loaded successfully")
+        except Exception as e:
+            log.error(f"Failed to load Whisper model: {e}")
+            self.model = None   # Explicitly set to None
+    else:
+        log.warning("faster-whisper not installed. Running in placeholder mode.")
+
+
+
 try:
     from TTS.api import TTS
     TTS_AVAILABLE = True
