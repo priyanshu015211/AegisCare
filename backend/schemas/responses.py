@@ -22,9 +22,9 @@ class APIResponse(BaseModel):
 
 
 class PatientAnalysisResponse(BaseModel):
-    """Response for POST /api/v1/patient/analyze"""
     status: Literal["success"] = "success"
     patient_id: str
+    session_id: Optional[str] = None          # ← Added
     severity: Literal["low", "medium", "high", "critical"] = "medium"
     risk_score: int = Field(ge=0, le=100)
     confidence: float = Field(ge=0.0, le=1.0)
