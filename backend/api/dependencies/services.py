@@ -30,11 +30,6 @@ def get_risk_service() -> RiskScoringService:
     """Returns a cached instance of RiskScoringService."""
     return RiskScoringService()
 
-
-@lru_cache()
-def get_drift_service() -> DriftDetectionService:
-    """Returns a cached instance of DriftDetectionService."""
-    return DriftDetectionService()
 @lru_cache()
 def get_ai_engine() -> AIEngine:
     return AIEngine()
