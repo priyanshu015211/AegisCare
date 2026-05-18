@@ -19,6 +19,7 @@ from backend.ai.reasoning.drift_engine import DriftEngine
 # Service Providers (Cached using lru_cache)
 # ============================================================
 
+
 @lru_cache()
 def get_patient_service() -> PatientService:
     """Returns a cached instance of PatientService."""
@@ -30,17 +31,24 @@ def get_risk_service() -> RiskScoringService:
     """Returns a cached instance of RiskScoringService."""
     return RiskScoringService()
 
+
 @lru_cache()
 def get_ai_engine() -> AIEngine:
+    """Returns a cached instance of AIEngine."""
     return AIEngine()
+
 
 @lru_cache()
 def get_drift_engine() -> DriftEngine:
+    """Returns a cached instance of DriftEngine."""
     return DriftEngine()
 
 
-AI_EngineDep = Annotated[AIEngine, Depends(get_ai_engine)]
-Drift_EngineDep = Annotated[DriftEngine, Depends(get_drift_engine)]
+@lru_cache()
+def get_drift_service() -> DriftDetectionService:
+    """Returns a cached instance of DriftDetectionService."""
+    return DriftDetectionService()
+
 
 # ============================================================
 # Type Aliases for Clean Usage in Routes
@@ -48,4 +56,6 @@ Drift_EngineDep = Annotated[DriftEngine, Depends(get_drift_engine)]
 
 PatientServiceDep = Annotated[PatientService, Depends(get_patient_service)]
 RiskServiceDep = Annotated[RiskScoringService, Depends(get_risk_service)]
+AI_EngineDep = Annotated[AIEngine, Depends(get_ai_engine)]
+Drift_EngineDep = Annotated[DriftEngine, Depends(get_drift_engine)]
 DriftServiceDep = Annotated[DriftDetectionService, Depends(get_drift_service)]
