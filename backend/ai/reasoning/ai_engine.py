@@ -1,11 +1,12 @@
 """
 backend/ai/reasoning/ai_engine.py
-Improved version for Hackathon Demo
+
+AegisCare AI Engine — uses google-genai (replaces deprecated google-generativeai).
 """
 
-import google.generativeai as genai
 import json
 from typing import Dict, Any
+
 from backend.core.config import get_settings
 from backend.core.logging import get_logger
 
@@ -15,24 +16,29 @@ settings = get_settings()
 
 class AIEngine:
     def __init__(self):
-        self.model = None
+        self.client = None
+        self.model_name = settings.gemini_model  # e.g. "gemini-1.5-flash"
+
         if settings.gemini_api_key:
             try:
-                genai.configure(api_key=settings.gemini_api_key)
-                self.model = genai.GenerativeModel(settings.gemini_model)
-                log.info("Gemini AI Engine initialized successfully")
+                from google import genai  # google-genai package
+                self.client = genai.Client(api_key=settings.gemini_api_key)
+                log.info(f"Gemini AI Engine initialised (model={self.model_name})")
             except Exception as e:
-                log.error(f"Failed to initialize Gemini: {e}")
+                log.error(f"Failed to initialise Gemini client: {e}")
         else:
-            log.warning("GEMINI_API_KEY not found!")
+            log.warning("GEMINI_API_KEY not set — AI Engine will use fallback responses")
+
+    # ------------------------------------------------------------------ #
+    # Public API                                                            #
+    # ------------------------------------------------------------------ #
 
     async def analyze_patient(self, patient_state: Dict[str, Any]) -> Dict[str, Any]:
         symptoms = patient_state.get("symptoms", [])
         duration = patient_state.get("duration", "Not specified")
         previous_symptoms = patient_state.get("previous_symptoms", [])
 
-        prompt = f"""
-You are an expert clinical triage AI assistant.
+        prompt = f"""You are an expert clinical triage AI assistant.
 
 Patient's Current Symptoms: {', '.join(symptoms)}
 Duration: {duration}
@@ -51,17 +57,19 @@ Respond ONLY in this JSON format:
   "reasoning": "short clinical explanation",
   "follow_up_question": "one relevant question",
   "escalation_needed": true or false
-}}
-"""
+}}"""
 
-        if not self.model:
+        if not self.client:
             return self._fallback_response(symptoms)
 
         try:
-            response = self.model.generate_content(prompt)
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             text = response.text.strip()
 
-            # Clean JSON if wrapped in markdown
+            # Strip markdown fences if present
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0].strip()
             elif "```" in text:
@@ -72,25 +80,30 @@ Respond ONLY in this JSON format:
                 "severity": result.get("severity", "medium"),
                 "risk_score": result.get("risk_score", 50),
                 "reasoning": result.get("reasoning", "Symptoms require monitoring."),
-                "follow_up_question": result.get("follow_up_question", "Can you describe your symptoms more?"),
+                "follow_up_question": result.get(
+                    "follow_up_question", "Can you describe your symptoms more?"
+                ),
                 "escalation_needed": result.get("escalation_needed", False),
-                "raw_response": text
+                "raw_response": text,
             }
 
         except Exception as e:
-            log.error(f"Gemini parsing error: {e}")
+            log.error(f"Gemini error: {e}")
             return self._fallback_response(symptoms)
 
-    def _fallback_response(self, symptoms: list) -> Dict[str, Any]:
-        """Used when Gemini fails"""
-        high_risk_symptoms = ["breathing difficulty", "chest pain", "shortness of breath"]
-        risk_score = 75 if any(s in high_risk_symptoms for s in symptoms) else 45
+    # ------------------------------------------------------------------ #
+    # Fallback                                                              #
+    # ------------------------------------------------------------------ #
 
+    def _fallback_response(self, symptoms: list) -> Dict[str, Any]:
+        """Rule-based fallback used when Gemini is unavailable."""
+        high_risk = {"breathing difficulty", "chest pain", "shortness of breath"}
+        risk_score = 75 if any(s in high_risk for s in symptoms) else 45
         return {
             "severity": "high" if risk_score >= 70 else "medium",
             "risk_score": risk_score,
             "reasoning": "Based on reported symptoms, condition needs attention.",
             "follow_up_question": "Are you experiencing any difficulty in breathing?",
             "escalation_needed": risk_score >= 70,
-            "raw_response": "Fallback response used"
+            "raw_response": "Fallback response used",
         }
