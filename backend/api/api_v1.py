@@ -12,11 +12,11 @@ from .routes.ai import router as ai_router
 from .routes.voice import router as voice_router
 from .routes.report import router as report_router
 
-api_router.include_router(report_router, prefix="/report", tags=["Reports"])
-
+# Create the aggregator router FIRST, then include sub-routers
 api_router = APIRouter()
 
 api_router.include_router(system_router, prefix="/system", tags=["System"])
 api_router.include_router(patient_router, prefix="/patient", tags=["Patient"])
 api_router.include_router(ai_router, prefix="/ai", tags=["AI"])
 api_router.include_router(voice_router, prefix="/voice", tags=["Voice"])
+api_router.include_router(report_router, prefix="/report", tags=["Reports"])
