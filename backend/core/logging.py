@@ -38,7 +38,8 @@ def setup_logging() -> None:
         colorize=True,
     )
 
-    # File handler with rotation and retention
+ # AFTER — only writes to file in non-production environments
+if settings.app_env != "production":
     log_path = Path(settings.log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -49,7 +50,7 @@ def setup_logging() -> None:
         rotation=settings.log_rotation,
         retention=settings.log_retention,
         compression="zip",
-        enqueue=True,  # Thread-safe
+        enqueue=True,
         backtrace=True,
         diagnose=settings.debug,
     )
