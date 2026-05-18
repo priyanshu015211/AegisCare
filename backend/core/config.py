@@ -6,8 +6,9 @@ All settings are loaded from environment variables via pydantic-settings.
 No hardcoded secrets. Fail fast if required values are missing.
 """
 
+import os
 from functools import lru_cache
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,13 +35,15 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
 
     # ----------------------------------------------------------
-    # Backend
+    # Backend — Render injects PORT as an env var at runtime
+    # backend_port reads PORT first, falls back to BACKEND_PORT,
+    # then defaults to 8000.
     # ----------------------------------------------------------
     backend_host: str = Field(default="0.0.0.0")
-    backend_port: int = Field(default=8000)
+    backend_port: int = Field(default_factory=lambda: int(os.environ.get("PORT", 8000)))
     backend_workers: int = Field(default=1)
     secret_key: str = Field(default="changeme")
-    allowed_origins: str = Field(default="http://localhost:8501")
+    allowed_origins: str = Field(default="*")
 
     @property
     def cors_origins(self) -> list[str]:
