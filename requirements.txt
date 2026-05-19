@@ -13,3 +13,9 @@ supabase==2.4.3
 
 # AI — use google-genai (google-generativeai is deprecated/EOL)
 google-genai==1.10.0
+
+# Frontend  (FIX Bug 6: was missing)
+streamlit>=1.35.0
+
+# Voice  (FIX Bug 6: was missing — comment out if not using voice features)
+faster-whisper==1.0.3
