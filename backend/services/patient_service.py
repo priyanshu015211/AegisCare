@@ -36,29 +36,34 @@ class PatientService(BaseService):
         # ========================
         # Save to Supabase
         # ========================
+        # FIX Bug 4: Capture session_id and include it in the return value
+        session_id = None
         try:
             # Create a new session
             session = await db_service.create_session(patient_id, symptoms)
 
             if session:
+                session_id = session.get("session_id")
+
                 # Save individual symptoms
                 for symptom in symptoms:
-                    await db_service.add_symptom(session["session_id"], symptom)
+                    await db_service.add_symptom(session_id, symptom)
 
                 # Update patient state
                 await db_service.update_patient_state(
-                    session_id=session["session_id"],
+                    session_id=session_id,
                     severity=severity,
                     risk_score=risk_score
                 )
 
-                self.log_info(f"Session saved to Supabase | ID: {session['session_id']}")
+                self.log_info(f"Session saved to Supabase | ID: {session_id}")
 
         except Exception as e:
             self.log_error(f"Failed to save to database: {e}")
 
         return {
             "patient_id": patient_id,
+            "session_id": session_id,       # FIX Bug 4: now included
             "symptoms": symptoms,
             "duration": duration,
             "risk_score": risk_score,
