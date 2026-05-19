@@ -5,6 +5,7 @@ AegisCare Database Service.
 Wraps all Supabase operations with error handling and logging.
 """
 
+import uuid
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 
@@ -106,7 +107,73 @@ class DatabaseService:
             return None
 
     # ------------------------------------------------------------------ #
-    # Handoff reports                                                        #
+    # FIX Bug 2: Added missing methods called by patient_service.py        #
+    # ------------------------------------------------------------------ #
+
+    async def create_session(
+        self, patient_id: str, symptoms: List[str]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Create a new triage session for a patient.
+        Returns the saved session dict (with session_id).
+        Falls back to a local dict if Supabase is unavailable.
+        """
+        session_data = {
+            "session_id": str(uuid.uuid4()),
+            "patient_id": patient_id,
+            "symptoms": symptoms,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+
+        if not self.is_connected:
+            log.warning("Supabase not connected — returning local session dict")
+            return session_data
+
+        saved = await self.save_triage_session(session_data)
+        # If Supabase insert succeeded return it; otherwise return the local dict
+        # so callers always get a usable session_id.
+        return saved if saved else session_data
+
+    async def add_symptom(self, session_id: str, symptom: str) -> bool:
+        """
+        Record an individual symptom linked to a triage session.
+        Silently skips if Supabase is unavailable.
+        """
+        if not self.is_connected:
+            return False
+        try:
+            data = {
+                "session_id": session_id,
+                "symptom": symptom,
+                "recorded_at": datetime.utcnow().isoformat(),
+            }
+            self.client.table("session_symptoms").insert(data).execute()
+            return True
+        except Exception as e:
+            log.error(f"Failed to add symptom to session {session_id}: {e}")
+            return False
+
+    async def update_patient_state(
+        self, session_id: str, severity: str, risk_score: int
+    ) -> bool:
+        """
+        Update severity and risk score on an existing triage session row.
+        Silently skips if Supabase is unavailable.
+        """
+        if not self.is_connected:
+            return False
+        try:
+            self.client.table("triage_sessions").update(
+                {"severity": severity, "risk_score": risk_score}
+            ).eq("session_id", session_id).execute()
+            log.info(f"Patient state updated | session={session_id} severity={severity} risk={risk_score}")
+            return True
+        except Exception as e:
+            log.error(f"Failed to update patient state for session {session_id}: {e}")
+            return False
+
+    # ------------------------------------------------------------------ #
+    # Handoff reports                                                       #
     # ------------------------------------------------------------------ #
 
     async def save_handoff_report(
@@ -132,5 +199,9 @@ class DatabaseService:
         except Exception as e:
             log.error(f"Failed to save handoff report: {e}")
             return False
-# Singleton instance
+
+
+# ------------------------------------------------------------------ #
+# FIX Bug 1: Singleton instance — importable as `db_service`          #
+# ------------------------------------------------------------------ #
 db_service = DatabaseService()
