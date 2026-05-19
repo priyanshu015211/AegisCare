@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form  # FIX Bug 3: added HTTPException
 from backend.voice.stt.whisper_engine import WhisperEngine
 from backend.voice.tts.xtts_engine import XTTSEngine
 from backend.core.logging import get_logger
