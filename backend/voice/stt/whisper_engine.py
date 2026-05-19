@@ -2,6 +2,9 @@
 backend/voice/stt/whisper_engine.py
 """
 
+import os
+import tempfile
+
 from backend.core.config import get_settings
 from backend.core.logging import get_logger
 
@@ -39,13 +42,25 @@ class WhisperEngine:
         if not self.model:
             return "This is a placeholder transcription. Please install faster-whisper."
 
+        # FIX Bug 5: faster-whisper expects a file path, not raw bytes.
+        # Write bytes to a temp file, transcribe from that path, then clean up.
+        tmp_path = None
         try:
-            segments, info = self.model.transcribe(
-                audio_bytes,
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(audio_bytes)
+                tmp_path = f.name
+
+            segments, _ = self.model.transcribe(
+                tmp_path,
                 language=language,
                 beam_size=5
             )
             return " ".join([segment.text for segment in segments]).strip()
+
         except Exception as e:
             log.error(f"Transcription error: {e}")
             return "Error during transcription."
+
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
