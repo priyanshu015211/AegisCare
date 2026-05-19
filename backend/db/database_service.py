@@ -132,3 +132,5 @@ class DatabaseService:
         except Exception as e:
             log.error(f"Failed to save handoff report: {e}")
             return False
+# Singleton instance
+db_service = DatabaseService()
