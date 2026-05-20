@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status
+from backend.models.api_schemas import ReportRequest
 from backend.reports.handoff_report import generate_handoff_report
 from backend.db.database_service import db_service
 from backend.core.logging import get_logger
@@ -10,12 +11,13 @@ router = APIRouter(prefix="/report", tags=["Reports"])
 
 @router.post("/handoff")
 async def generate_handoff_report_endpoint(
-    session_id: str,
-    patient_id: str
+    request: ReportRequest
 ):
     """
     Generate and save a doctor handoff report.
     """
+    session_id = request.session_id
+    patient_id = request.patient_id
     try:
         # In real usage, we should fetch actual patient data from DB
         patient_state = {
