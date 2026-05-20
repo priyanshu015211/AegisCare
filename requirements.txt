@@ -6,16 +6,16 @@ pydantic-settings==2.2.1
 python-dotenv==1.0.1
 python-multipart==0.0.9
 loguru==0.7.2
-httpx==0.27.0
+httpx>=0.24.0
 
 # Database
-supabase==2.4.3
+supabase>=2.4.0
 
 # AI — use google-genai (google-generativeai is deprecated/EOL)
-google-genai==1.10.0
+google-genai>=1.10.0
 
-# Frontend  (FIX Bug 6: was missing)
+# Frontend
 streamlit>=1.35.0
 
-# Voice  (FIX Bug 6: was missing — comment out if not using voice features)
-faster-whisper==1.0.3
+# Voice  (comment out if not using voice features)
+# faster-whisper==1.0.3
