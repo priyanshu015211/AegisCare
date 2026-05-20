@@ -36,3 +36,26 @@ async def analyze_patient(
     except Exception as e:
         log.error(f"Error in patient analysis: {e}")
         raise HTTPException(status_code=500, detail="Failed to analyze patient")
+
+
+@router.post("/update", response_model=PatientUpdateResponse)
+async def update_patient(
+    request: PatientUpdateRequest,
+    patient_service: PatientServiceDep
+):
+    try:
+        result = await patient_service.update_patient_state(
+            patient_id=request.patient_id,
+            new_symptom=request.new_symptom,
+        )
+
+        return PatientUpdateResponse(
+            patient_id=result["patient_id"],
+            new_symptom=result["new_symptom"],
+            updated_risk_score=result["updated_risk_score"],
+            severity=result["severity"],
+            message=result["message"],
+        )
+    except Exception as e:
+        log.error(f"Error updating patient: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update patient")
