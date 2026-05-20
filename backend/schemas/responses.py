@@ -50,6 +50,7 @@ class PatientUpdateResponse(BaseModel):
     """Response for POST /api/v1/patient/update"""
     status: Literal["success"] = "success"
     patient_id: str
+    new_symptom: Optional[str] = None
     updated_risk_score: int = Field(ge=0, le=100)
     severity: Literal["low", "medium", "high", "critical"]
     message: str
