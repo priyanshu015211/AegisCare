@@ -38,22 +38,22 @@ def setup_logging() -> None:
         colorize=True,
     )
 
- # AFTER — only writes to file in non-production environments
-if settings.app_env != "production":
-    log_path = Path(settings.log_file)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Only writes to file in non-production environments
+    if settings.app_env != "production":
+        log_path = Path(settings.log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    _loguru_logger.add(
-        str(log_path),
-        format=log_format,
-        level=settings.log_level,
-        rotation=settings.log_rotation,
-        retention=settings.log_retention,
-        compression="zip",
-        enqueue=True,
-        backtrace=True,
-        diagnose=settings.debug,
-    )
+        _loguru_logger.add(
+            str(log_path),
+            format=log_format,
+            level=settings.log_level,
+            rotation=settings.log_rotation,
+            retention=settings.log_retention,
+            compression="zip",
+            enqueue=True,
+            backtrace=True,
+            diagnose=settings.debug,
+        )
 
     _loguru_logger.info(
         f"Logging initialized | env={settings.app_env} | level={settings.log_level}"
