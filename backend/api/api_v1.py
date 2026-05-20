@@ -16,7 +16,7 @@ from .routes.report import router as report_router
 api_router = APIRouter()
 
 api_router.include_router(system_router, prefix="/system", tags=["System"])
-api_router.include_router(patient_router, prefix="/patient", tags=["Patient"])
-api_router.include_router(ai_router, prefix="/ai", tags=["AI"])
-api_router.include_router(voice_router, prefix="/voice", tags=["Voice"])
-api_router.include_router(report_router, prefix="/report", tags=["Reports"])
+api_router.include_router(patient_router)  # already has prefix="/patient"
+api_router.include_router(ai_router)       # already has prefix="/ai"
+api_router.include_router(voice_router)    # already has prefix="/voice"
+api_router.include_router(report_router)   # already has prefix="/report"
