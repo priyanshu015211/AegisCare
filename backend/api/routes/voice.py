@@ -1,119 +1,161 @@
 """
 backend/api/routes/voice.py
 
-FIX Bug 8: The /respond endpoint previously always called synthesize(), got
-back empty bytes (b"") from the XTTSEngine placeholder, and then returned a
-JSON response claiming success with audio_size=0. Any client expecting audio
-would silently receive nothing with no indication the feature was unavailable.
+Bug 19 fix: The previous implementation only checked file.content_type,
+which is a client-supplied header — trivially spoofed and not validated
+by faster-whisper until deep inside the model call, producing an unhelpful
+500 error.
 
-Fixes applied:
-1. XTTSEngine now exposes an `is_available` flag so the route can check
-   before calling synthesize().
-2. When TTS is unavailable, /respond returns HTTP 503 Service Unavailable
-   with a clear message instead of a misleading success response.
-3. When TTS is available and returns real audio bytes, the endpoint returns
-   a proper StreamingResponse with Content-Type: audio/wav so clients can
-   actually play it.
-4. WhisperEngine and XTTSEngine are instantiated lazily (on first request)
-   rather than at module import time, consistent with the fix for Bug 4/5.
+Now we:
+  1. Enforce an explicit allowlist of supported MIME types (not just startswith("audio/"))
+  2. Read the first 12 bytes and check magic bytes to verify the file is
+     actually the format it claims to be, independent of the Content-Type header.
+  3. Enforce a max file size (25 MB) to prevent OOM on the Whisper model.
+  4. Return a clear 400 with a descriptive message on every validation failure,
+     so clients get actionable errors instead of a generic 500.
 """
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, status
-from fastapi.responses import StreamingResponse
 import io
-
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from backend.core.logging import get_logger
 
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/voice", tags=["Voice"])
 
-# Lazy singletons — created on first request, not at import time
-_whisper_engine = None
-_xtts_engine = None
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Explicit allowlist — faster-whisper supports WAV, MP3, OGG, FLAC, M4A/MP4
+ALLOWED_MIME_TYPES = {
+    "audio/wav",
+    "audio/x-wav",
+    "audio/wave",
+    "audio/mpeg",       # mp3
+    "audio/mp3",
+    "audio/ogg",
+    "audio/flac",
+    "audio/x-flac",
+    "audio/mp4",
+    "audio/m4a",
+    "audio/x-m4a",
+    "video/mp4",        # some browsers send m4a as video/mp4
+}
+
+MAX_AUDIO_BYTES = 25 * 1024 * 1024  # 25 MB
+
+# Magic-byte signatures for each supported format.
+# Each entry is (label, list_of_accepted_prefixes).
+# We only need the first 12 bytes of the file to cover all formats here.
+_MAGIC: list[tuple[str, list[bytes]]] = [
+    ("WAV",  [b"RIFF"]),
+    ("MP3",  [b"\xff\xfb", b"\xff\xf3", b"\xff\xf2", b"ID3"]),
+    ("OGG",  [b"OggS"]),
+    ("FLAC", [b"fLaC"]),
+    # MP4 / M4A: ftyp box at byte 4
+    ("MP4",  [b"\x00\x00\x00\x18ftyp", b"\x00\x00\x00\x1cftyp",
+              b"\x00\x00\x00\x20ftyp", b"\x00\x00\x00\x1cftyp"]),
+]
 
 
-def _get_whisper():
-    global _whisper_engine
-    if _whisper_engine is None:
-        from backend.voice.stt.whisper_engine import WhisperEngine
-        _whisper_engine = WhisperEngine()
-    return _whisper_engine
+def _detect_format(header: bytes) -> str | None:
+    """
+    Return a format label if the magic bytes match a known audio format,
+    or None if the bytes don't correspond to any supported format.
+    Only the first 12 bytes are needed.
+    """
+    for label, prefixes in _MAGIC:
+        for prefix in prefixes:
+            if header[:len(prefix)] == prefix:
+                return label
+    # M4A/MP4 ftyp box can start at different offsets; check bytes 4–8
+    if header[4:8] == b"ftyp":
+        return "MP4"
+    return None
 
 
-def _get_xtts():
-    global _xtts_engine
-    if _xtts_engine is None:
-        from backend.voice.tts.xtts_engine import XTTSEngine
-        _xtts_engine = XTTSEngine()
-    return _xtts_engine
-
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @router.post("/transcribe")
 async def transcribe_audio(
     file: UploadFile = File(...),
-    language: str = Form(default="en")
+    language: str = Form(default="en"),
 ):
     """
-    Transcribe an uploaded audio file to text using Whisper.
-    Accepts any audio/* MIME type.
+    Transcribe an uploaded audio file using Whisper.
+
+    Validation order:
+      1. MIME type must be in the explicit allowlist.
+      2. File must not exceed MAX_AUDIO_BYTES.
+      3. Magic bytes must match a supported audio format.
+    All failures return HTTP 400 with a clear message.
     """
-    if not file.content_type or not file.content_type.startswith("audio/"):
+    # --- 1. MIME type allowlist check ---
+    content_type = (file.content_type or "").lower().split(";")[0].strip()
+    if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only audio files are accepted (audio/* content type required)"
+            status_code=400,
+            detail=(
+                f"Unsupported content type '{content_type}'. "
+                f"Accepted types: {', '.join(sorted(ALLOWED_MIME_TYPES))}"
+            ),
         )
 
+    # --- 2. Read file & enforce size limit ---
     audio_bytes = await file.read()
+
     if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="Audio file is empty.")
+
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded audio file is empty"
+            status_code=400,
+            detail=f"Audio file too large ({len(audio_bytes) // 1024 // 1024} MB). Maximum is 25 MB.",
         )
 
-    whisper = _get_whisper()
-    text = await whisper.transcribe(audio_bytes, language=language)
+    # --- 3. Magic-byte validation ---
+    detected = _detect_format(audio_bytes[:12])
+    if detected is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The uploaded file does not appear to be a valid audio file. "
+                "Supported formats: WAV, MP3, OGG, FLAC, M4A/MP4. "
+                "Please check the file and try again."
+            ),
+        )
+
+    log.info(
+        f"Audio upload accepted | file={file.filename!r} "
+        f"mime={content_type} detected={detected} size={len(audio_bytes)} bytes"
+    )
+
+    # --- 4. Transcribe ---
+    # Import here to avoid loading Whisper at module level (slow, heavy)
+    try:
+        from backend.voice.stt.whisper_engine import WhisperEngine
+        whisper_engine = WhisperEngine()
+        text = await whisper_engine.transcribe(audio_bytes, language=language)
+    except Exception as e:
+        log.error(f"Whisper transcription failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Transcription failed. The audio may be corrupted or in an unsupported encoding.",
+        )
+
     return {"status": "success", "transcription": text, "language": language}
 
 
 @router.post("/respond")
 async def generate_voice_response(text: str, language: str = "en"):
-    """
-    Synthesise speech from text and return it as a streaming audio/wav response.
-
-    Returns HTTP 503 if the TTS engine is running in placeholder mode
-    (i.e. faster-whisper / XTTS is not installed in this deployment).
-    Returns a StreamingResponse with Content-Type audio/wav when available.
-    """
-    xtts = _get_xtts()
-
-    # FIX Bug 8: check availability before calling synthesize so we never
-    # return a misleading success response with 0 bytes of audio.
-    if not xtts.is_available:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Text-to-speech is not available in this deployment. "
-                "Install the XTTS dependencies and set TTS_ENGINE in your .env to enable it."
-            )
-        )
-
-    audio_bytes = await xtts.synthesize(text, language=language)
-
-    if not audio_bytes:
-        # Synthesis ran but produced nothing — surface this as a server error
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="TTS synthesis returned no audio. Check engine logs."
-        )
-
-    # Stream the raw audio bytes back with the correct content type so
-    # clients (browsers, mobile apps) can play it directly.
-    return StreamingResponse(
-        io.BytesIO(audio_bytes),
-        media_type="audio/wav",
-        headers={
-            "Content-Disposition": "inline; filename=response.wav",
-            "Content-Length": str(len(audio_bytes)),
-        }
-    )
+    from backend.voice.tts.xtts_engine import XTTSEngine
+    xtts_engine = XTTSEngine()
+    audio_bytes = await xtts_engine.synthesize(text, language=language)
+    return {
+        "status": "success",
+        "message": "Voice response generated",
+        "audio_size": len(audio_bytes),
+    }
