@@ -3,6 +3,13 @@ backend/models/api_schemas.py
 
 Request and response schemas for all AegisCare API endpoints.
 These are the public API contracts — keep them stable across phases.
+
+NOTE: APIResponse is defined once in backend/schemas/responses.py and
+re-exported here.  The previous duplicate definition in this file used
+a different field layout (code: ResponseCode instead of status: Literal["success"])
+which caused silent schema inconsistencies depending on which module was
+imported.  All code should now import APIResponse from either location —
+they resolve to the same class.
 """
 
 from datetime import datetime
@@ -11,17 +18,11 @@ from pydantic import BaseModel, Field
 
 from backend.core.constants import SeverityLevel, EscalationAction, ResponseCode
 
-
-# ----------------------------------------------------------
-# Generic API Response Envelope
-# ----------------------------------------------------------
-
-class APIResponse(BaseModel):
-    """Standard response wrapper for all AegisCare API endpoints."""
-    code: ResponseCode = ResponseCode.SUCCESS
-    message: str = "OK"
-    data: Optional[Any] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+# Single source of truth for the generic response envelope.
+# Importing here so existing code that does
+#   from backend.models.api_schemas import APIResponse
+# continues to work without changes.
+from backend.schemas.responses import APIResponse  # noqa: F401  (re-export)
 
 
 class APIError(BaseModel):
