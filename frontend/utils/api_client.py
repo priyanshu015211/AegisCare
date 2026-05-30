@@ -13,6 +13,19 @@ Bearer header on every request. The token is read from the AEGISCARE_TOKEN
 environment variable by default so it can be set in the deployment env
 without hardcoding it here.
 
+Bug 12 fix: the previous code read BACKEND_URL with a raw os.getenv() call,
+completely bypassing the Pydantic settings system. This meant that if
+BACKEND_URL was set via the .env file it would be picked up, but the value
+was never validated, never type-checked, and was inconsistent with the
+settings.backend_url field defined in config.py. Anyone who set backend_url
+in settings expecting it to flow through to the API client would see no effect.
+
+Now we import get_settings() and read settings.backend_url as the single
+source of truth. The .env key (BACKEND_URL) still works unchanged because
+pydantic-settings maps it automatically — the only difference is the value
+now goes through the same validated, cached settings object as everything
+else in the backend.
+
 NOTE: The backend's current auth is a placeholder that accepts any
 non-empty token (see auth.py). Once real Supabase JWT auth is wired up,
 replace the AEGISCARE_TOKEN env var approach with a proper login flow that
@@ -23,7 +36,13 @@ import httpx
 import os
 from typing import Dict, Any, Optional
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+from backend.core.config import get_settings
+
+_settings = get_settings()
+
+# Single source of truth — reads BACKEND_URL env var via pydantic-settings,
+# with the same default and validation as everything else in the app.
+BACKEND_URL = _settings.backend_url
 
 # Read a static token from the environment for the placeholder auth layer.
 # Replace with a real Supabase JWT from a login flow once auth is complete.
