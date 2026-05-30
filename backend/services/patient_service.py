@@ -27,14 +27,19 @@ class PatientService(BaseService):
         patient_id: str,
         symptoms: List[str],
         duration: Optional[str] = None,
-        language: str = "en"
+        language: str = "en",
+        risk_score: Optional[int] = None,   # Bug 6: accept pre-computed value from RiskScoringService
+        severity: Optional[str] = None,     # Bug 6: accept pre-computed value from RiskScoringService
     ) -> Dict[str, Any]:
 
         self.log_info(f"Analyzing symptoms for patient {patient_id}")
 
-        # Calculate risk (placeholder logic for now)
-        risk_score = self._calculate_placeholder_risk(symptoms, duration)
-        severity = self._determine_severity(risk_score)
+        # Use pre-computed values when provided by RiskScoringService (Bug 6 fix),
+        # otherwise fall back to the internal placeholder.
+        if risk_score is None:
+            risk_score = self._calculate_placeholder_risk(symptoms, duration)
+        if severity is None:
+            severity = self._determine_severity(risk_score)
 
         # ========================
         # Save to Supabase
@@ -83,14 +88,15 @@ class PatientService(BaseService):
         risk_score = 75 if new_symptom in ["breathing difficulty", "chest pain"] else 55
         severity = self._determine_severity(risk_score)
 
-        # TODO: In future, fetch existing session and update it
-
+        # TODO: In future, fetch existing session symptoms and append
+        # For now, return the new symptom in a list so drift detection has input
         return {
             "patient_id": patient_id,
             "new_symptom": new_symptom,
+            "all_symptoms": [new_symptom],   # Bug 6: expose for DriftDetectionService
             "updated_risk_score": risk_score,
             "severity": severity,
-            "message": "Patient state updated."
+            "message": "Patient state updated.",
         }
 
     def _calculate_placeholder_risk(self, symptoms: List[str], duration: Optional[str]) -> int:
@@ -104,6 +110,12 @@ class PatientService(BaseService):
         return min(max(base, 0), 100)
 
     def _determine_severity(self, risk_score: int) -> str:
+        # Bug 11 fix: schema declares Literal["low","medium","high","critical"]
+        # but this method previously never returned "critical", so any truly
+        # critical case assessed here was silently capped at "high".
+        # Threshold aligned with ESCALATION_CRITICAL_THRESHOLD in .env.example (85).
+        if risk_score >= 85:
+            return "critical"
         if risk_score >= 75:
             return "high"
         elif risk_score >= 50:
