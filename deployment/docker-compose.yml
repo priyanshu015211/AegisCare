@@ -1,29 +1,52 @@
+# deployment/docker-compose.yml
+#
+# Bug 11 fix: both services now point at the canonical Dockerfiles in
+# docker/ instead of the stale, diverged copies in deployment/.
+#
+# The deployment/ Dockerfiles were missing:
+#   - ENV PYTHONPATH=/app  (causes ModuleNotFoundError on frontend startup)
+#   - plotly, pandas, httpx installs (causes ImportError in dashboard pages)
+#   - proper LABEL metadata
+#   - -u 1000 flag on useradd (uid consistency across rebuilds)
+#
+# There is no reason to maintain two sets of Dockerfiles.
+# docker/Dockerfile.backend and docker/Dockerfile.frontend are the
+# single source of truth for both local dev and deployment.
+
 version: "3.9"
 
 services:
   backend:
     build:
       context: ..
-      dockerfile: deployment/Dockerfile.backend
+      dockerfile: docker/Dockerfile.backend
     ports:
       - "8000:8000"
     env_file:
       - ../.env
+    environment:
+      - APP_ENV=production
+      - BACKEND_HOST=0.0.0.0
+      - PORT=8000
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
   frontend:
     build:
       context: ..
-      # Fixed: was pointing to deployment/Dockerfile.frontend which never existed.
-      # The frontend Dockerfile lives at docker/Dockerfile.frontend.
       dockerfile: docker/Dockerfile.frontend
     ports:
       - "8501:8501"
+    env_file:
+      - ../.env
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - PORT=8501
     depends_on:
       - backend
     restart: unless-stopped
