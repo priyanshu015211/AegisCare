@@ -1,102 +1,138 @@
 """
 frontend/utils/api_client.py
 
-Centralized API client for communicating with AegisCare Backend.
-Supports both sync and async calls.
+Centralised API client for communicating with the AegisCare backend.
+Supports both sync (Streamlit) and async call patterns.
 
-Bug 3 fix: all protected backend routes require an "Authorization: Bearer
-<token>" header. The previous client sent no auth headers, so every API
-call from the frontend returned a 401 and nothing worked.
+Bug 2 fix (was Bug 12 in the report):
+    The previous version did `from backend.core.config import get_settings`
+    to read BACKEND_URL.  This creates a hard import dependency from the
+    Streamlit frontend process into the FastAPI backend package.  On Render
+    the two services are deployed independently, and even locally this means
+    the frontend process loads all of backend/core/ (Pydantic settings,
+    logging setup, etc.) just to read a single URL string.
 
-The client now accepts a token at construction time and injects it as a
-Bearer header on every request. The token is read from the AEGISCARE_TOKEN
-environment variable by default so it can be set in the deployment env
-without hardcoding it here.
+    The fix reads BACKEND_URL directly from the environment with os.getenv(),
+    which is exactly what pydantic-settings was doing under the hood anyway.
+    The frontend no longer imports anything from the backend package.
 
-Bug 12 fix: the previous code read BACKEND_URL with a raw os.getenv() call,
-completely bypassing the Pydantic settings system. This meant that if
-BACKEND_URL was set via the .env file it would be picked up, but the value
-was never validated, never type-checked, and was inconsistent with the
-settings.backend_url field defined in config.py. Anyone who set backend_url
-in settings expecting it to flow through to the API client would see no effect.
-
-Now we import get_settings() and read settings.backend_url as the single
-source of truth. The .env key (BACKEND_URL) still works unchanged because
-pydantic-settings maps it automatically — the only difference is the value
-now goes through the same validated, cached settings object as everything
-else in the backend.
-
-NOTE: The backend's current auth is a placeholder that accepts any
-non-empty token (see auth.py). Once real Supabase JWT auth is wired up,
-replace the AEGISCARE_TOKEN env var approach with a proper login flow that
-stores the JWT in Streamlit session_state and passes it here.
+Bug 3 fix:
+    All protected backend routes require "Authorization: Bearer <token>".
+    The client injects the token on every request.  The token is read from
+    the AEGISCARE_TOKEN environment variable (set in .env locally, and in
+    the Render dashboard for production).
 """
 
-import httpx
 import os
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from backend.core.config import get_settings
+import httpx
 
-_settings = get_settings()
 
-# Single source of truth — reads BACKEND_URL env var via pydantic-settings,
-# with the same default and validation as everything else in the app.
-BACKEND_URL = _settings.backend_url
+# ---------------------------------------------------------------------------
+# Configuration — read directly from environment, no backend import needed
+# ---------------------------------------------------------------------------
 
-# Read a static token from the environment for the placeholder auth layer.
+BACKEND_URL: str = os.getenv("BACKEND_URL", "http://localhost:8000")
+
+# Static bearer token for the placeholder auth layer.
 # Replace with a real Supabase JWT from a login flow once auth is complete.
-_DEFAULT_TOKEN = os.getenv("AEGISCARE_TOKEN", "dev-token")
+_DEFAULT_TOKEN: str = os.getenv("AEGISCARE_TOKEN", "dev-token")
 
+
+# ---------------------------------------------------------------------------
+# Client
+# ---------------------------------------------------------------------------
 
 class APIClient:
-    def __init__(self, base_url: str = BACKEND_URL, token: str = _DEFAULT_TOKEN):
+    """
+    Thin HTTP client that wraps httpx and injects auth headers automatically.
+
+    Construct once per Streamlit session (or use the module-level `api_client`
+    singleton for simple cases).  Call set_token() after a successful login
+    to switch from the dev token to a real JWT.
+    """
+
+    def __init__(
+        self,
+        base_url: str = BACKEND_URL,
+        token: str = _DEFAULT_TOKEN,
+        timeout: float = 30.0,
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self._token = token
+        self._timeout = timeout
+
+    # ------------------------------------------------------------------
+    # Auth helpers
+    # ------------------------------------------------------------------
 
     @property
     def _auth_headers(self) -> Dict[str, str]:
-        """Returns the Authorization header dict for every request."""
+        """Returns the Authorization header dict injected on every request."""
         return {"Authorization": f"Bearer {self._token}"}
 
     def set_token(self, token: str) -> None:
         """Update the bearer token (e.g. after a Supabase login flow)."""
         self._token = token
 
-    # ------------------ Async Methods ------------------
-    async def post_async(self, endpoint: str, json: Optional[Dict] = None) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+    # ------------------------------------------------------------------
+    # Async methods
+    # ------------------------------------------------------------------
+
+    async def post_async(
+        self,
+        endpoint: str,
+        json: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(
-                f"{self.base_url}{endpoint}", json=json, headers=self._auth_headers
+                f"{self.base_url}{endpoint}",
+                json=json,
+                headers=self._auth_headers,
             )
             response.raise_for_status()
             return response.json()
 
     async def get_async(self, endpoint: str) -> Dict[str, Any]:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.get(
-                f"{self.base_url}{endpoint}", headers=self._auth_headers
+                f"{self.base_url}{endpoint}",
+                headers=self._auth_headers,
             )
             response.raise_for_status()
             return response.json()
 
-    # ------------------ Sync Methods (for Streamlit) ------------------
-    def post(self, endpoint: str, json: Optional[Dict] = None) -> Dict[str, Any]:
-        with httpx.Client(timeout=30.0) as client:
+    # ------------------------------------------------------------------
+    # Sync methods (Streamlit runs in a synchronous context by default)
+    # ------------------------------------------------------------------
+
+    def post(
+        self,
+        endpoint: str,
+        json: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        with httpx.Client(timeout=self._timeout) as client:
             response = client.post(
-                f"{self.base_url}{endpoint}", json=json, headers=self._auth_headers
+                f"{self.base_url}{endpoint}",
+                json=json,
+                headers=self._auth_headers,
             )
             response.raise_for_status()
             return response.json()
 
     def get(self, endpoint: str) -> Dict[str, Any]:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=self._timeout) as client:
             response = client.get(
-                f"{self.base_url}{endpoint}", headers=self._auth_headers
+                f"{self.base_url}{endpoint}",
+                headers=self._auth_headers,
             )
             response.raise_for_status()
             return response.json()
 
 
-# Global instance — token sourced from AEGISCARE_TOKEN env var
+# ---------------------------------------------------------------------------
+# Module-level singleton — use this in Streamlit pages for simple cases
+# ---------------------------------------------------------------------------
+
 api_client = APIClient()
