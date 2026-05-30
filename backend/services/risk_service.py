@@ -51,6 +51,9 @@ class RiskScoringService(BaseService):
         }
 
     def _get_severity(self, score: int) -> str:
+        # Bug 11 fix: aligned with patient_service thresholds
+        if score >= 85:
+            return "critical"
         if score >= 75:
             return "high"
         if score >= 50:
