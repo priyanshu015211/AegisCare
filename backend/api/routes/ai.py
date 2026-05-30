@@ -1,3 +1,11 @@
+"""
+backend/api/routes/ai.py
+
+AI analysis route.  Uses session_id (from PatientAnalyzeRequest) to
+key PatientMemory so concurrent triage sessions for the same patient
+never overwrite each other's in-memory state.
+"""
+
 from fastapi import APIRouter, HTTPException, status, Depends
 from backend.schemas.patient import PatientAnalyzeRequest
 from backend.ai.memory.patient_memory import PatientMemory
@@ -17,21 +25,24 @@ async def analyze_patient_ai(
     """
     AI-powered patient analysis using Gemini.
     Returns severity, risk score, reasoning, and follow-up question.
+
+    Each call is scoped to (patient_id, session_id) so parallel triage
+    sessions for the same patient remain fully isolated.
     """
     try:
-        # Create memory for this session
-        memory = PatientMemory(request.patient_id)
+        # Key memory on the composite (patient_id, session_id) so
+        # concurrent sessions for the same patient never collide.
+        memory_key = f"{request.patient_id}:{request.session_id}"
+        memory = PatientMemory(memory_key)
+
         for symptom in request.symptoms:
             memory.add_symptom(symptom)
 
-        # Get current state
         patient_state = memory.get_state()
         patient_state["duration"] = request.duration
 
-        # Call improved AI Engine
         result = await ai_engine.analyze_patient(patient_state)
 
-        # Update memory with AI result
         memory.update_risk(
             risk_score=result.get("risk_score", 50),
             severity=result.get("severity", "medium"),
@@ -41,6 +52,7 @@ async def analyze_patient_ai(
         return {
             "status": "success",
             "patient_id": request.patient_id,
+            "session_id": request.session_id,   # echo back so callers can track
             "analysis": {
                 "severity": result.get("severity"),
                 "risk_score": result.get("risk_score"),
