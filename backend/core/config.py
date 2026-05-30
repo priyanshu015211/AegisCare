@@ -7,6 +7,7 @@ No hardcoded secrets. Fail fast if required values are missing.
 """
 
 import os
+import warnings
 from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,15 +36,42 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO")
 
     # ----------------------------------------------------------
-    # Backend — Render injects PORT as an env var at runtime
-    # backend_port reads PORT first, falls back to BACKEND_PORT,
-    # then defaults to 8000.
+    # Backend
     # ----------------------------------------------------------
     backend_host: str = Field(default="0.0.0.0")
     backend_port: int = Field(default_factory=lambda: int(os.environ.get("PORT", 8000)))
     backend_workers: int = Field(default=1)
+
+    # "changeme" is the insecure fallback. A validator below raises an error
+    # in production and emits a loud warning in development so this is never
+    # silently deployed with a known-weak key.
+    # Generate a safe value with:
+    #   python -c "import secrets; print(secrets.token_hex(32))"
     secret_key: str = Field(default="changeme")
+
+    # Must be set to real domain(s) in production — never "*".
+    # See render.yaml for instructions.
     allowed_origins: str = Field(default="*")
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: str, info) -> str:
+        is_production = os.environ.get("APP_ENV", "development").lower() == "production"
+        if v in ("changeme", "", "secret", "dev"):
+            if is_production:
+                raise ValueError(
+                    "SECRET_KEY is set to an insecure default value. "
+                    "Set a strong SECRET_KEY environment variable before deploying. "
+                    "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                )
+            else:
+                warnings.warn(
+                    "WARNING: SECRET_KEY is using the insecure default 'changeme'. "
+                    "Set SECRET_KEY in your .env file for local dev to avoid this warning. "
+                    "This will raise an error in production.",
+                    stacklevel=2,
+                )
+        return v
 
     @property
     def cors_origins(self) -> list[str]:
