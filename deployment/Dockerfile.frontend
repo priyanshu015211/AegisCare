@@ -1,31 +1,16 @@
 # deployment/Dockerfile.frontend
-# AegisCare — Streamlit Frontend
+#
+# BUG 11 — THIS FILE IS DEPRECATED AND NO LONGER USED.
+#
+# The canonical frontend Dockerfile is docker/Dockerfile.frontend.
+# Both docker-compose.yml (root) and deployment/docker-compose.yml
+# now reference docker/Dockerfile.frontend directly.
+#
+# This file is kept only so existing bookmarks / scripts that reference
+# this path get a clear error message instead of a silent build from
+# stale, diverged content.
+#
+# DO NOT add instructions here. Edit docker/Dockerfile.frontend instead.
 
-FROM python:3.11-slim
-
-LABEL maintainer="AegisCare Team"
-LABEL description="AegisCare Streamlit Frontend"
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-RUN useradd -m -u 1000 aegiscare && chown -R aegiscare:aegiscare /app
-USER aegiscare
-
-EXPOSE 8501
-
-HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
-
-CMD streamlit run frontend/app.py \
-    --server.port=${PORT:-8501} \
-    --server.address=0.0.0.0 \
-    --server.headless=true
+FROM scratch
+RUN echo "ERROR: Use docker/Dockerfile.frontend — this file is deprecated." && exit 1
