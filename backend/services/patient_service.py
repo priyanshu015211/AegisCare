@@ -6,7 +6,10 @@ Patient Service with Supabase Integration.
 
 from typing import List, Dict, Any, Optional
 from backend.services.base_service import BaseService
-from backend.db.database_service import db_service
+# FIX Bug 4: Import the lazy factory instead of the old module-level singleton.
+# `db_service` no longer exists; call get_db_service() at use-time so the
+# DatabaseService is created on first request, not at import time.
+from backend.db.database_service import get_db_service
 from backend.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -36,21 +39,21 @@ class PatientService(BaseService):
         # ========================
         # Save to Supabase
         # ========================
-        # FIX Bug 4: Capture session_id and include it in the return value
         session_id = None
         try:
-            # Create a new session
-            session = await db_service.create_session(patient_id, symptoms)
+            db = get_db_service()
+
+            session = await db.create_session(patient_id, symptoms)
 
             if session:
                 session_id = session.get("session_id")
 
                 # Save individual symptoms
                 for symptom in symptoms:
-                    await db_service.add_symptom(session_id, symptom)
+                    await db.add_symptom(session_id, symptom)
 
                 # Update patient state
-                await db_service.update_patient_state(
+                await db.update_patient_state(
                     session_id=session_id,
                     severity=severity,
                     risk_score=risk_score
@@ -63,7 +66,7 @@ class PatientService(BaseService):
 
         return {
             "patient_id": patient_id,
-            "session_id": session_id,       # FIX Bug 4: now included
+            "session_id": session_id,
             "symptoms": symptoms,
             "duration": duration,
             "risk_score": risk_score,
@@ -80,7 +83,7 @@ class PatientService(BaseService):
         risk_score = 75 if new_symptom in ["breathing difficulty", "chest pain"] else 55
         severity = self._determine_severity(risk_score)
 
-        # TODO: In future, we will fetch existing session and update it
+        # TODO: In future, fetch existing session and update it
 
         return {
             "patient_id": patient_id,
