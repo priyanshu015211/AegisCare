@@ -1,213 +1,40 @@
-"""
-backend/db/database_service.py
+# docker/Dockerfile.frontend
+# AegisCare — Streamlit Frontend
 
-AegisCare Database Service.
-Wraps all Supabase operations with error handling and logging.
+FROM python:3.11-slim
 
-Key fix (Bug 16): All datetime.utcnow() calls replaced with
-datetime.now(timezone.utc) — utcnow() is deprecated in Python 3.12+.
+LABEL maintainer="AegisCare Team"
+LABEL description="AegisCare Streamlit Frontend"
 
-Key fix (Bug 10 follow-through): Write operations (upsert/insert/update)
-now use get_supabase_admin_client() so they bypass RLS on protected tables.
-Read operations keep using the anon client.
-"""
+WORKDIR /app
 
-import uuid
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-from backend.db.supabase_client import get_supabase_client, get_supabase_admin_client
-from backend.core.logging import get_logger
+COPY requirements.txt .
+# Install from requirements.txt first so all pinned versions are respected,
+# then ensure the packages the frontend actually uses are present.
+# NOTE: api_client.py uses httpx (async + sync HTTP). The previous image
+# installed `requests` instead, which caused ImportError on every API call.
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir streamlit plotly pandas python-dotenv httpx
 
-log = get_logger(__name__)
+COPY . .
 
+# Bug 4 fix: frontend/app.py uses absolute package imports
+# (e.g. "from frontend.pages import ..."). Streamlit does not add the
+# project root to sys.path automatically, so without PYTHONPATH those
+# imports raise ModuleNotFoundError. Setting it here fixes the issue
+# for both `docker-compose up` and any direct `docker run`.
+ENV PYTHONPATH=/app
 
-def _utcnow() -> datetime:
-    """Timezone-aware UTC now. Replaces the deprecated datetime.utcnow()."""
-    return datetime.now(timezone.utc)
+RUN useradd -m -u 1000 aegiscare && chown -R aegiscare:aegiscare /app
+USER aegiscare
 
+EXPOSE 8501
 
-class DatabaseService:
-    """
-    Central database service for AegisCare.
-    All Supabase table operations go through here.
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-    - self.read_client  → anon key, used for SELECT queries
-    - self.write_client → service-role key, used for INSERT/UPDATE/UPSERT/DELETE
-    """
-
-    def __init__(self):
-        self.read_client = get_supabase_client()
-        self.write_client = get_supabase_admin_client()
-        self.is_connected = self.read_client is not None
-
-        if self.write_client is None:
-            log.warning(
-                "DatabaseService: admin (service-role) client unavailable. "
-                "All database writes will be skipped. "
-                "Set SUPABASE_SERVICE_ROLE_KEY in your .env to enable writes."
-            )
-        if self.is_connected:
-            log.info("DatabaseService initialised with Supabase connection")
-        else:
-            log.warning("DatabaseService running WITHOUT Supabase (no credentials)")
-
-    # ------------------------------------------------------------------ #
-    # Patient records                                                       #
-    # ------------------------------------------------------------------ #
-
-    async def save_patient(self, patient_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Insert or upsert a patient record."""
-        if not self.write_client:
-            return None
-        try:
-            result = self.write_client.table("patients").upsert(patient_data).execute()
-            log.info(f"Patient saved: {patient_data.get('patient_id', '?')}")
-            return result.data[0] if result.data else None
-        except Exception as e:
-            log.error(f"Failed to save patient: {e}")
-            return None
-
-    async def get_patient(self, patient_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch a single patient by ID."""
-        if not self.read_client:
-            return None
-        try:
-            result = (
-                self.read_client.table("patients")
-                .select("*")
-                .eq("patient_id", patient_id)
-                .single()
-                .execute()
-            )
-            return result.data
-        except Exception as e:
-            log.error(f"Failed to fetch patient {patient_id}: {e}")
-            return None
-
-    async def list_patients(self) -> List[Dict[str, Any]]:
-        """Return all patient records."""
-        if not self.read_client:
-            return []
-        try:
-            result = self.read_client.table("patients").select("*").execute()
-            return result.data or []
-        except Exception as e:
-            log.error(f"Failed to list patients: {e}")
-            return []
-
-    # ------------------------------------------------------------------ #
-    # Triage sessions                                                       #
-    # ------------------------------------------------------------------ #
-
-    async def save_triage_session(self, session_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Insert a new triage session row."""
-        if not self.write_client:
-            return None
-        try:
-            result = self.write_client.table("triage_sessions").insert(session_data).execute()
-            log.info(f"Triage session saved: {session_data.get('session_id', '?')}")
-            return result.data[0] if result.data else None
-        except Exception as e:
-            log.error(f"Failed to save triage session: {e}")
-            return None
-
-    async def get_triage_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Fetch a triage session by ID."""
-        if not self.read_client:
-            return None
-        try:
-            result = (
-                self.read_client.table("triage_sessions")
-                .select("*")
-                .eq("session_id", session_id)
-                .single()
-                .execute()
-            )
-            return result.data
-        except Exception as e:
-            log.error(f"Failed to fetch session {session_id}: {e}")
-            return None
-
-    async def create_session(
-        self, patient_id: str, symptoms: List[str]
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Create a new triage session for a patient.
-        Falls back to a local dict if Supabase is unavailable.
-        """
-        session_data = {
-            "session_id": str(uuid.uuid4()),
-            "patient_id": patient_id,
-            "symptoms": symptoms,
-            "created_at": _utcnow().isoformat(),
-        }
-
-        if not self.write_client:
-            log.warning("Supabase not connected — returning local session dict")
-            return session_data
-
-        saved = await self.save_triage_session(session_data)
-        return saved if saved else session_data
-
-    async def add_symptom(self, session_id: str, symptom: str) -> bool:
-        """Record an individual symptom linked to a triage session."""
-        if not self.write_client:
-            return False
-        try:
-            data = {
-                "session_id": session_id,
-                "symptom": symptom,
-                "recorded_at": _utcnow().isoformat(),
-            }
-            self.write_client.table("session_symptoms").insert(data).execute()
-            return True
-        except Exception as e:
-            log.error(f"Failed to add symptom to session {session_id}: {e}")
-            return False
-
-    async def update_patient_state(
-        self, session_id: str, severity: str, risk_score: int
-    ) -> bool:
-        """Update severity and risk score on an existing triage session row."""
-        if not self.write_client:
-            return False
-        try:
-            self.write_client.table("triage_sessions").update(
-                {"severity": severity, "risk_score": risk_score}
-            ).eq("session_id", session_id).execute()
-            log.info(f"Patient state updated | session={session_id} severity={severity} risk={risk_score}")
-            return True
-        except Exception as e:
-            log.error(f"Failed to update patient state for session {session_id}: {e}")
-            return False
-
-    # ------------------------------------------------------------------ #
-    # Handoff reports                                                       #
-    # ------------------------------------------------------------------ #
-
-    async def save_handoff_report(
-        self,
-        session_id: str,
-        patient_id: str,
-        report_content: str,
-    ) -> bool:
-        """Save doctor handoff report to database."""
-        if not self.write_client:
-            return False
-        try:
-            data = {
-                "session_id": session_id,
-                "patient_id": patient_id,
-                "generated_at": _utcnow().isoformat(),
-                "report_markdown": report_content,
-            }
-            self.write_client.table("reports").insert(data).execute()
-            log.info(f"Handoff report saved for session {session_id}")
-            return True
-        except Exception as e:
-            log.error(f"Failed to save handoff report: {e}")
-            return False
-
-
-db_service = DatabaseService()
+CMD ["streamlit", "run", "frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
