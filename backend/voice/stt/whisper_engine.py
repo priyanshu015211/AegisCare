@@ -84,7 +84,12 @@ class WhisperEngine:
 
     async def transcribe(self, audio_bytes: bytes, language: str = "en") -> str:
         if not self.model:
-            return "This is a placeholder transcription. Please install faster-whisper."
+            # Bug 7 fix: return a structured sentinel value rather than a string
+            # that looks like real transcription output.  The route in voice.py
+            # checks this prefix and surfaces it to callers as a 503 so they
+            # know transcription is non-functional, instead of receiving a fake
+            # result silently.
+            return "__PLACEHOLDER__: faster-whisper is not installed. Install it via requirements.txt to enable real transcription."
 
         # faster-whisper expects a file path, not raw bytes.
         # Write to a temp file with the correct extension so ffmpeg
