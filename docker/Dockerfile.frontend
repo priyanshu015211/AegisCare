@@ -23,6 +23,13 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY . .
 
+# Bug 4 fix: frontend/app.py uses absolute package imports
+# (e.g. "from frontend.pages import ..."). Streamlit does not add the
+# project root to sys.path automatically, so without PYTHONPATH those
+# imports raise ModuleNotFoundError. Setting it here fixes the issue
+# for both `docker-compose up` and any direct `docker run`.
+ENV PYTHONPATH=/app
+
 RUN useradd -m -u 1000 aegiscare && chown -R aegiscare:aegiscare /app
 USER aegiscare
 
