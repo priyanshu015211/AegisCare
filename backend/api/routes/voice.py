@@ -151,9 +151,37 @@ async def transcribe_audio(
 
 @router.post("/respond")
 async def generate_voice_response(text: str, language: str = "en"):
+    """
+    Synthesise a voice response from text using XTTS.
+
+    Bug 2 fix: previously this endpoint called synthesize() without
+    checking is_available, received b"" silently, and returned
+    {"status": "success", "audio_size": 0} — a misleading lie.
+
+    Now we check is_available first and return a proper 503 when the
+    TTS engine is not functional, so clients get an actionable error
+    instead of an empty audio response disguised as success.
+    """
     from backend.voice.tts.xtts_engine import XTTSEngine
     xtts_engine = XTTSEngine()
+
+    if not xtts_engine.is_available:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Text-to-speech engine is not available. "
+                "Install the TTS library and ensure the model is loaded to enable this endpoint."
+            ),
+        )
+
     audio_bytes = await xtts_engine.synthesize(text, language=language)
+
+    if not audio_bytes:
+        raise HTTPException(
+            status_code=503,
+            detail="TTS synthesis returned empty audio. The model may not be loaded correctly.",
+        )
+
     return {
         "status": "success",
         "message": "Voice response generated",
