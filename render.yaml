@@ -1,11 +1,15 @@
 # render.yaml — Render deployment configuration for AegisCare
 
 services:
+  # ----------------------------------------------------------
+  # FastAPI Backend
+  # ----------------------------------------------------------
   - type: web
     name: aegiscare-backend
     runtime: python
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: APP_ENV
         value: production
@@ -24,5 +28,25 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ALLOWED_ORIGINS
+        # Set this to your actual Render frontend URL once deployed,
+        # e.g. https://aegiscare-frontend.onrender.com
+        # Using "*" in production is insecure — see bug #14.
         value: "*"
-    healthCheckPath: /health
+
+  # ----------------------------------------------------------
+  # Streamlit Frontend
+  # ----------------------------------------------------------
+  - type: web
+    name: aegiscare-frontend
+    runtime: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    # Streamlit reads $PORT automatically via --server.port
+    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    healthCheckPath: /_stcore/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: BACKEND_URL
+        # After deploying the backend, paste its Render URL here.
+        # Example: https://aegiscare-backend.onrender.com
+        value: https://aegiscare-backend.onrender.com
