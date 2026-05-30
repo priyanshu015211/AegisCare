@@ -16,6 +16,8 @@ google-genai>=1.10.0
 
 # Frontend
 streamlit>=1.35.0
+plotly>=5.20.0       # used by dashboard.py and analytics.py
+pandas>=2.0.0        # used by dashboard.py and analytics.py
 
 # Voice  (comment out if not using voice features)
 # faster-whisper==1.0.3
