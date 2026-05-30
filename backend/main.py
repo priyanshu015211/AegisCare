@@ -13,6 +13,16 @@ This module initializes the FastAPI application with:
 
 Run with:
     uvicorn backend.main:app --reload --port 8000
+
+FIX Bug 7: Removed the hardcoded @app.get("/api/v1/system/uptime") route that
+was defined directly on the app instance in this file. That pattern is
+architecturally wrong — all /api/v1/system/* routes belong in
+backend/api/routes/system.py and are mounted via api_router. Having one system
+endpoint here and the rest in system.py created an inconsistency and a latent
+path collision risk if system.py ever added its own /uptime endpoint.
+
+APP_START_TIME is still defined here (this module starts first), and system.py
+imports it to power the /uptime endpoint cleanly.
 """
 
 import time
@@ -41,7 +51,7 @@ log = get_logger(__name__)
 
 settings = get_settings()
 
-# Simple in-memory start time for uptime reporting
+# Exposed at module level so system.py can import it for the /uptime endpoint.
 APP_START_TIME = time.time()
 
 
@@ -116,26 +126,8 @@ app.include_router(api_router, prefix="/api/v1")
 
 
 # ============================================================
-# DEBUG / OPERATIONS ENDPOINTS
+# ENTRYPOINT
 # ============================================================
-
-@app.get(
-    "/api/v1/system/uptime",
-    tags=["System"],
-    include_in_schema=settings.debug,
-    summary="Application Uptime (debug only)"
-)
-async def get_uptime():
-    uptime_seconds = time.time() - APP_START_TIME
-    hours = int(uptime_seconds // 3600)
-    minutes = int((uptime_seconds % 3600) // 60)
-    seconds = int(uptime_seconds % 60)
-    return {
-        "uptime_seconds": round(uptime_seconds, 2),
-        "uptime_human": f"{hours}h {minutes}m {seconds}s",
-        "started_at": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(APP_START_TIME)),
-    }
-
 
 if __name__ == "__main__":
     import uvicorn
