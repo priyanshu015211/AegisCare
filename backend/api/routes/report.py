@@ -1,7 +1,10 @@
 from fastapi import APIRouter, HTTPException, status
 from backend.models.api_schemas import ReportRequest
 from backend.reports.handoff_report import generate_handoff_report
-from backend.db.database_service import db_service
+# FIX Bug 4: Import the lazy factory instead of the old module-level singleton.
+# `db_service` no longer exists; use get_db_service() so the DatabaseService
+# is only created on first use, not at import time.
+from backend.db.database_service import get_db_service
 from backend.core.logging import get_logger
 
 log = get_logger(__name__)
@@ -31,8 +34,9 @@ async def generate_handoff_report_endpoint(
 
         report_content = generate_handoff_report(patient_state)
 
-        # Save to Supabase
-        saved = await db_service.save_handoff_report(session_id, patient_id, report_content)
+        # Save to Supabase via lazy factory — no crash risk at import time
+        db = get_db_service()
+        saved = await db.save_handoff_report(session_id, patient_id, report_content)
 
         return {
             "status": "success",
