@@ -13,8 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# Install from requirements.txt first so all pinned versions are respected,
+# then ensure the packages the frontend actually uses are present.
+# NOTE: api_client.py uses httpx (async + sync HTTP). The previous image
+# installed `requests` instead, which caused ImportError on every API call.
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir streamlit plotly pandas python-dotenv httpx
 
 COPY . .
 
@@ -25,7 +30,4 @@ EXPOSE 8501
 
 HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
 
-CMD streamlit run frontend/app.py \
-    --server.port=${PORT:-8501} \
-    --server.address=0.0.0.0 \
-    --server.headless=true
+CMD ["streamlit", "run", "frontend/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]
