@@ -3,10 +3,23 @@ backend/db/database_service.py
 
 AegisCare Database Service.
 Wraps all Supabase operations with error handling and logging.
+
+FIX Bug 4: Removed the module-level `db_service = DatabaseService()` singleton.
+That line ran at import time, which meant any Supabase misconfiguration or
+network blip during startup would raise an exception and crash the entire
+FastAPI process before it could serve a single request.
+
+Instead, `get_db_service()` is a lazy factory:
+- It creates the DatabaseService on first call, not at import time.
+- FastAPI's Depends() calls it per-request but the instance is cached via
+  a module-level variable so only one instance is ever created.
+- Any file that previously did `from backend.db.database_service import db_service`
+  must switch to `from backend.db.database_service import get_db_service`
+  and call get_db_service() to obtain the instance.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 
 from backend.db.supabase_client import get_supabase_client
@@ -14,14 +27,36 @@ from backend.core.logging import get_logger
 
 log = get_logger(__name__)
 
+# Module-level cache — populated on first call to get_db_service(), not at import.
+_db_service_instance: Optional["DatabaseService"] = None
+
+
+def get_db_service() -> "DatabaseService":
+    """
+    Lazy factory for DatabaseService.
+
+    Returns the same instance on every call (singleton), but defers
+    creation until the first actual call so import-time crashes are
+    impossible even when Supabase credentials are absent or the
+    network is unavailable at startup.
+    """
+    global _db_service_instance
+    if _db_service_instance is None:
+        _db_service_instance = DatabaseService()
+    return _db_service_instance
+
 
 class DatabaseService:
     """
     Central database service for AegisCare.
     All Supabase table operations go through here.
+
+    Do not instantiate directly — use get_db_service() instead.
     """
 
     def __init__(self):
+        # Connection is attempted here, but this constructor is only called
+        # from get_db_service() on first use, never at module import time.
         self.client = get_supabase_client()
         self.is_connected = self.client is not None
         if self.is_connected:
@@ -106,10 +141,6 @@ class DatabaseService:
             log.error(f"Failed to fetch session {session_id}: {e}")
             return None
 
-    # ------------------------------------------------------------------ #
-    # FIX Bug 2: Added missing methods called by patient_service.py        #
-    # ------------------------------------------------------------------ #
-
     async def create_session(
         self, patient_id: str, symptoms: List[str]
     ) -> Optional[Dict[str, Any]]:
@@ -122,7 +153,7 @@ class DatabaseService:
             "session_id": str(uuid.uuid4()),
             "patient_id": patient_id,
             "symptoms": symptoms,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
         if not self.is_connected:
@@ -130,8 +161,6 @@ class DatabaseService:
             return session_data
 
         saved = await self.save_triage_session(session_data)
-        # If Supabase insert succeeded return it; otherwise return the local dict
-        # so callers always get a usable session_id.
         return saved if saved else session_data
 
     async def add_symptom(self, session_id: str, symptom: str) -> bool:
@@ -145,7 +174,7 @@ class DatabaseService:
             data = {
                 "session_id": session_id,
                 "symptom": symptom,
-                "recorded_at": datetime.utcnow().isoformat(),
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
             }
             self.client.table("session_symptoms").insert(data).execute()
             return True
@@ -166,7 +195,10 @@ class DatabaseService:
             self.client.table("triage_sessions").update(
                 {"severity": severity, "risk_score": risk_score}
             ).eq("session_id", session_id).execute()
-            log.info(f"Patient state updated | session={session_id} severity={severity} risk={risk_score}")
+            log.info(
+                f"Patient state updated | session={session_id} "
+                f"severity={severity} risk={risk_score}"
+            )
             return True
         except Exception as e:
             log.error(f"Failed to update patient state for session {session_id}: {e}")
@@ -185,12 +217,11 @@ class DatabaseService:
         """Save doctor handoff report to database."""
         if not self.is_connected:
             return False
-
         try:
             data = {
                 "session_id": session_id,
                 "patient_id": patient_id,
-                "generated_at": datetime.utcnow().isoformat(),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
                 "report_markdown": report_content,
             }
             self.client.table("reports").insert(data).execute()
@@ -199,9 +230,3 @@ class DatabaseService:
         except Exception as e:
             log.error(f"Failed to save handoff report: {e}")
             return False
-
-
-# ------------------------------------------------------------------ #
-# FIX Bug 1: Singleton instance — importable as `db_service`          #
-# ------------------------------------------------------------------ #
-db_service = DatabaseService()
