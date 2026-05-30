@@ -5,11 +5,13 @@ services:
     name: aegiscare-backend
     runtime: python
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    # Bug 10 fix: pass --workers so the BACKEND_WORKERS env var is respected.
-    # Render's free tier is single-core so the default of 1 is correct there,
-    # but paid tiers with multiple vCPUs need this wired up to scale.
-    # Set BACKEND_WORKERS in the Render dashboard to match your instance's vCPUs.
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers ${BACKEND_WORKERS:-1}
+    # Bug 13 fix: Render does not run startCommand through a shell, so the
+    # ${BACKEND_WORKERS:-1} bash fallback syntax was passed as a literal
+    # string to uvicorn, causing it to start with --workers "${BACKEND_WORKERS:-1}"
+    # rather than the intended integer. The default is already declared as
+    # value: "1" in the BACKEND_WORKERS envVar entry below, so plain $BACKEND_WORKERS
+    # is sufficient — Render substitutes it correctly before invoking the command.
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers $BACKEND_WORKERS
     envVars:
       - key: APP_ENV
         value: production
