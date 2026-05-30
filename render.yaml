@@ -1,15 +1,11 @@
 # render.yaml — Render deployment configuration for AegisCare
 
 services:
-  # ----------------------------------------------------------
-  # FastAPI Backend
-  # ----------------------------------------------------------
   - type: web
     name: aegiscare-backend
     runtime: python
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
     startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /health
     envVars:
       - key: APP_ENV
         value: production
@@ -25,28 +21,21 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: SECRET_KEY
-        generateValue: true
-      - key: ALLOWED_ORIGINS
-        # Set this to your actual Render frontend URL once deployed,
-        # e.g. https://aegiscare-frontend.onrender.com
-        # Using "*" in production is insecure — see bug #14.
-        value: "*"
 
-  # ----------------------------------------------------------
-  # Streamlit Frontend
-  # ----------------------------------------------------------
-  - type: web
-    name: aegiscare-frontend
-    runtime: python
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    # Streamlit reads $PORT automatically via --server.port
-    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
-    healthCheckPath: /_stcore/health
-    envVars:
-      - key: APP_ENV
-        value: production
-      - key: BACKEND_URL
-        # After deploying the backend, paste its Render URL here.
-        # Example: https://aegiscare-backend.onrender.com
-        value: https://aegiscare-backend.onrender.com
+      # SECRET_KEY must be a stable, long random string set manually in the
+      # Render dashboard (Environment → Secret Files or env vars).
+      # Do NOT use generateValue: true — that creates a new key on every
+      # deploy, which invalidates all active sessions and signed tokens.
+      # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+      - key: SECRET_KEY
+        sync: false   # set manually in Render dashboard
+
+      # ALLOWED_ORIGINS must list your actual frontend domain(s).
+      # A wildcard ("*") allows any website to make cross-origin requests
+      # to this API, which combined with unauthenticated endpoints means
+      # the entire API is open to the public internet.
+      # Example: "https://aegiscare.onrender.com,https://app.aegiscare.io"
+      - key: ALLOWED_ORIGINS
+        sync: false   # set manually in Render dashboard
+
+    healthCheckPath: /health
