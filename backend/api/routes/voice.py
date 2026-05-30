@@ -24,6 +24,22 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/voice", tags=["Voice"])
 
 # ---------------------------------------------------------------------------
+# Bug 8 fix: initialise heavy ML engines ONCE at module load time, not on
+# every request.  XTTSEngine loads a multi-GB model; WhisperEngine loads a
+# Whisper checkpoint.  Creating a new instance per request was
+# catastrophically slow (many seconds of model loading per call).
+#
+# Both engines gracefully degrade to placeholder/unavailable mode when their
+# optional dependencies (TTS / faster-whisper) are not installed, so this is
+# safe to do at import time.
+# ---------------------------------------------------------------------------
+from backend.voice.stt.whisper_engine import WhisperEngine
+from backend.voice.tts.xtts_engine import XTTSEngine
+
+_whisper_engine: WhisperEngine = WhisperEngine()
+_xtts_engine: XTTSEngine = XTTSEngine()
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -134,16 +150,28 @@ async def transcribe_audio(
     )
 
     # --- 4. Transcribe ---
-    # Import here to avoid loading Whisper at module level (slow, heavy)
+    # Use the module-level singleton (Bug 8 fix — no per-request model loading)
     try:
-        from backend.voice.stt.whisper_engine import WhisperEngine
-        whisper_engine = WhisperEngine()
-        text = await whisper_engine.transcribe(audio_bytes, language=language)
+        text = await _whisper_engine.transcribe(audio_bytes, language=language)
     except Exception as e:
         log.error(f"Whisper transcription failed: {e}")
         raise HTTPException(
             status_code=500,
             detail="Transcription failed. The audio may be corrupted or in an unsupported encoding.",
+        )
+
+    # Bug 7 fix: WhisperEngine returns a sentinel string when faster-whisper is
+    # not installed. Surfacing a fake transcription as a success response is a
+    # silent functional failure — return a 503 instead so callers know the
+    # engine is non-functional.
+    if text.startswith("__PLACEHOLDER__"):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Speech-to-text engine is not available. "
+                "Install faster-whisper (uncomment it in requirements.txt) "
+                "to enable real transcription."
+            ),
         )
 
     return {"status": "success", "transcription": text, "language": language}
@@ -154,18 +182,10 @@ async def generate_voice_response(text: str, language: str = "en"):
     """
     Synthesise a voice response from text using XTTS.
 
-    Bug 2 fix: previously this endpoint called synthesize() without
-    checking is_available, received b"" silently, and returned
-    {"status": "success", "audio_size": 0} — a misleading lie.
-
-    Now we check is_available first and return a proper 503 when the
-    TTS engine is not functional, so clients get an actionable error
-    instead of an empty audio response disguised as success.
+    Bug 8 fix: uses the module-level singleton _xtts_engine instead of
+    creating a new XTTSEngine (and loading the multi-GB model) per request.
     """
-    from backend.voice.tts.xtts_engine import XTTSEngine
-    xtts_engine = XTTSEngine()
-
-    if not xtts_engine.is_available:
+    if not _xtts_engine.is_available:
         raise HTTPException(
             status_code=503,
             detail=(
@@ -174,7 +194,7 @@ async def generate_voice_response(text: str, language: str = "en"):
             ),
         )
 
-    audio_bytes = await xtts_engine.synthesize(text, language=language)
+    audio_bytes = await _xtts_engine.synthesize(text, language=language)
 
     if not audio_bytes:
         raise HTTPException(
