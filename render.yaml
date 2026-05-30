@@ -42,6 +42,15 @@ services:
       - key: SECRET_KEY
         sync: false   # set manually in Render dashboard
 
+      # Bug 9 fix: AEGISCARE_TOKEN was previously missing from the backend
+      # service envVars entirely.  Without it the backend falls back to the
+      # hardcoded "dev-token" default, meaning anyone who reads auth.py on
+      # GitHub can authenticate to every protected endpoint in production.
+      # Set this to a long random secret in the Render dashboard — the same
+      # value that is set for the frontend service below.
+      - key: AEGISCARE_TOKEN
+        sync: false   # set manually in Render dashboard — must match frontend value
+
       # ALLOWED_ORIGINS must list your actual frontend domain(s).
       # A wildcard ("*") allows any website to make cross-origin requests
       # to this API, which combined with unauthenticated endpoints means
