@@ -39,3 +39,35 @@ services:
         sync: false   # set manually in Render dashboard
 
     healthCheckPath: /health
+
+  # ---------------------------------------------------------------
+  # Bug 4 fix: frontend service was missing entirely from render.yaml.
+  # Without this block the Streamlit UI is never deployed on Render.
+  # ---------------------------------------------------------------
+  - type: web
+    name: aegiscare-frontend
+    runtime: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: APP_ENV
+        value: production
+
+      # Point the frontend at the deployed backend.
+      # Set this to the Render URL of the aegiscare-backend service,
+      # e.g. https://aegiscare-backend.onrender.com
+      - key: BACKEND_URL
+        sync: false   # set manually in Render dashboard
+
+      # Static bearer token used by the frontend API client.
+      # Must match what the backend accepts until real Supabase JWT
+      # auth is implemented (see auth.py TODO).
+      - key: AEGISCARE_TOKEN
+        sync: false   # set manually in Render dashboard
+
+      # Required so that "from frontend.xxx import ..." resolves correctly
+      # when Streamlit runs frontend/app.py from the repo root.
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+
+    healthCheckPath: /_stcore/health
