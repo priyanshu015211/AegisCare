@@ -1,26 +1,16 @@
 # deployment/Dockerfile.backend
-# AegisCare — FastAPI Backend (deployment variant)
+#
+# BUG 11 — THIS FILE IS DEPRECATED AND NO LONGER USED.
+#
+# The canonical backend Dockerfile is docker/Dockerfile.backend.
+# Both docker-compose.yml (root) and deployment/docker-compose.yml
+# now reference docker/Dockerfile.backend directly.
+#
+# This file is kept only so existing bookmarks / scripts that reference
+# this path get a clear error message instead of a silent build from
+# stale, diverged content.
+#
+# DO NOT add instructions here. Edit docker/Dockerfile.backend instead.
 
-FROM python:3.11-slim
-
-WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-COPY . .
-
-RUN mkdir -p logs
-
-RUN useradd -m aegiscare && chown -R aegiscare:aegiscare /app
-USER aegiscare
-
-EXPOSE 8000
-
-CMD uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
+FROM scratch
+RUN echo "ERROR: Use docker/Dockerfile.backend — this file is deprecated." && exit 1
