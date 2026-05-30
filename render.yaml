@@ -5,7 +5,11 @@ services:
     name: aegiscare-backend
     runtime: python
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    # Bug 10 fix: pass --workers so the BACKEND_WORKERS env var is respected.
+    # Render's free tier is single-core so the default of 1 is correct there,
+    # but paid tiers with multiple vCPUs need this wired up to scale.
+    # Set BACKEND_WORKERS in the Render dashboard to match your instance's vCPUs.
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers ${BACKEND_WORKERS:-1}
     envVars:
       - key: APP_ENV
         value: production
@@ -21,6 +25,12 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+
+      # Number of uvicorn worker processes.
+      # Default 1 is correct for Render free tier (single vCPU).
+      # Set to 2–4 on paid tiers — rule of thumb: 2 × vCPUs + 1.
+      - key: BACKEND_WORKERS
+        value: "1"
 
       # SECRET_KEY must be a stable, long random string set manually in the
       # Render dashboard (Environment → Secret Files or env vars).
