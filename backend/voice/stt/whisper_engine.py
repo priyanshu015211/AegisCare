@@ -1,5 +1,16 @@
 """
 backend/voice/stt/whisper_engine.py
+
+Bug 7 fix: the temp file written for faster-whisper was always given a
+.wav suffix regardless of the actual audio format. faster-whisper delegates
+to ffmpeg for decoding, and ffmpeg trusts the file extension as a format
+hint. Uploading an MP3 that lands in a file called *.wav causes ffmpeg to
+mis-parse the header and produces silence or an error.
+
+Fix: derive the correct extension from the first four bytes of the audio
+data (magic-byte detection), falling back to .wav only when the format
+cannot be identified. This matches the format detection already in voice.py
+so the two are consistent.
 """
 
 import os
@@ -18,6 +29,39 @@ except ImportError:
     WHISPER_AVAILABLE = False
     log.warning("faster-whisper not installed. Using placeholder mode.")
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _extension_for(audio_bytes: bytes) -> str:
+    """
+    Return the correct file extension for the given audio data by inspecting
+    the magic bytes. Falls back to '.wav' if the format is unrecognised.
+
+    faster-whisper passes the path straight to ffmpeg, which uses the
+    extension as a format hint — so the extension must match the actual
+    container format or ffmpeg will mis-parse the stream.
+    """
+    if audio_bytes[:4] == b"RIFF":
+        return ".wav"
+    if audio_bytes[:3] == b"ID3" or audio_bytes[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return ".mp3"
+    if audio_bytes[:4] == b"OggS":
+        return ".ogg"
+    if audio_bytes[:4] == b"fLaC":
+        return ".flac"
+    if audio_bytes[4:8] == b"ftyp":
+        return ".m4a"
+    # Unknown format — .wav is the safest default and ffmpeg will attempt to
+    # auto-detect anyway if the extension is wrong.
+    log.warning("Could not detect audio format from magic bytes; defaulting to .wav")
+    return ".wav"
+
+
+# ---------------------------------------------------------------------------
+# Engine
+# ---------------------------------------------------------------------------
 
 class WhisperEngine:
     def __init__(self, model_size: str = None):
@@ -42,11 +86,13 @@ class WhisperEngine:
         if not self.model:
             return "This is a placeholder transcription. Please install faster-whisper."
 
-        # FIX Bug 5: faster-whisper expects a file path, not raw bytes.
-        # Write bytes to a temp file, transcribe from that path, then clean up.
+        # faster-whisper expects a file path, not raw bytes.
+        # Write to a temp file with the correct extension so ffmpeg
+        # decodes the stream with the right format hint.
+        ext = _extension_for(audio_bytes)
         tmp_path = None
         try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
                 f.write(audio_bytes)
                 tmp_path = f.name
 
