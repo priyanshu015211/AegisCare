@@ -133,4 +133,5 @@ streamlit run frontend/app.py        # Start frontend
 
 ## License
 
-Internal development use only. Not licensed for public distribution.
+
+licensed
