@@ -28,6 +28,7 @@ from fastapi import Depends
 from backend.services.patient_service import PatientService
 from backend.services.risk_service import RiskScoringService
 from backend.services.drift_service import DriftDetectionService
+from backend.services.ai.llm_service import LLMService
 from backend.ai.reasoning.ai_engine import AIEngine
 from backend.ai.reasoning.drift_engine import DriftEngine
 from backend.db.database_service import DatabaseService, get_db_service
@@ -38,6 +39,7 @@ from backend.db.database_service import DatabaseService, get_db_service
 
 _patient_service: Optional[PatientService] = None
 _risk_service: Optional[RiskScoringService] = None
+_llm_service: Optional[LLMService] = None
 _ai_engine: Optional[AIEngine] = None
 _drift_engine: Optional[DriftEngine] = None
 _drift_service: Optional[DriftDetectionService] = None
@@ -64,6 +66,18 @@ def get_risk_service() -> RiskScoringService:
     if _risk_service is None:
         _risk_service = RiskScoringService()
     return _risk_service
+
+
+def get_llm_service() -> LLMService:
+    """
+    Returns a shared LLMService instance.
+    The Gemini/OpenAI clients are initialised on first call, not at
+    import time, so a missing API key does not crash startup.
+    """
+    global _llm_service
+    if _llm_service is None:
+        _llm_service = LLMService()
+    return _llm_service
 
 
 def get_ai_engine() -> AIEngine:
@@ -100,6 +114,7 @@ def get_drift_service() -> DriftDetectionService:
 
 PatientServiceDep = Annotated[PatientService, Depends(get_patient_service)]
 RiskServiceDep = Annotated[RiskScoringService, Depends(get_risk_service)]
+LLMServiceDep = Annotated[LLMService, Depends(get_llm_service)]
 AI_EngineDep = Annotated[AIEngine, Depends(get_ai_engine)]
 Drift_EngineDep = Annotated[DriftEngine, Depends(get_drift_engine)]
 DriftServiceDep = Annotated[DriftDetectionService, Depends(get_drift_service)]

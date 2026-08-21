@@ -4,13 +4,16 @@ backend/api/routes/ai.py
 AI analysis route.  Uses session_id (from PatientAnalyzeRequest) to
 key PatientMemory so concurrent triage sessions for the same patient
 never overwrite each other's in-memory state.
+
+Uses LLMService (T-001) for Gemini-primary, OpenAI-fallback, rule-based
+final-fallback triage analysis.
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends
 from backend.schemas.patient import PatientAnalyzeRequest
 from backend.ai.memory.patient_memory import PatientMemory
 from backend.core.logging import get_logger
-from backend.api.dependencies.services import get_ai_engine
+from backend.api.dependencies.services import get_llm_service
 
 log = get_logger(__name__)
 
@@ -20,7 +23,7 @@ router = APIRouter(prefix="/ai", tags=["AI"])
 @router.post("/analyze")
 async def analyze_patient_ai(
     request: PatientAnalyzeRequest,
-    ai_engine=Depends(get_ai_engine)
+    llm_service=Depends(get_llm_service)
 ):
     """
     AI-powered patient analysis using Gemini.
@@ -41,7 +44,7 @@ async def analyze_patient_ai(
         patient_state = memory.get_state()
         patient_state["duration"] = request.duration
 
-        result = await ai_engine.analyze_patient(patient_state)
+        result = await llm_service.analyze_patient(patient_state)
 
         memory.update_risk(
             risk_score=result.get("risk_score", 50),
@@ -63,6 +66,8 @@ async def analyze_patient_ai(
             "current_state": memory.get_state()
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(f"AI analysis failed: {e}")
         raise HTTPException(
