@@ -1,0 +1,94 @@
+# render.yaml — Render deployment configuration for AegisCare
+
+services:
+  - type: web
+    name: aegiscare-backend
+    runtime: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    # Bug 13 fix: Render does not run startCommand through a shell, so the
+    # ${BACKEND_WORKERS:-1} bash fallback syntax was passed as a literal
+    # string to uvicorn, causing it to start with --workers "${BACKEND_WORKERS:-1}"
+    # rather than the intended integer. The default is already declared as
+    # value: "1" in the BACKEND_WORKERS envVar entry below, so plain $BACKEND_WORKERS
+    # is sufficient — Render substitutes it correctly before invoking the command.
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT --workers $BACKEND_WORKERS
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # Number of uvicorn worker processes.
+      # Default 1 is correct for Render free tier (single vCPU).
+      # Set to 2–4 on paid tiers — rule of thumb: 2 × vCPUs + 1.
+      - key: BACKEND_WORKERS
+        value: "1"
+
+      # SECRET_KEY must be a stable, long random string set manually in the
+      # Render dashboard (Environment → Secret Files or env vars).
+      # Do NOT use generateValue: true — that creates a new key on every
+      # deploy, which invalidates all active sessions and signed tokens.
+      # Generate one with: python -c "import secrets; print(secrets.token_hex(32))"
+      - key: SECRET_KEY
+        sync: false   # set manually in Render dashboard
+
+      # Bug 9 fix: AEGISCARE_TOKEN was previously missing from the backend
+      # service envVars entirely.  Without it the backend falls back to the
+      # hardcoded "dev-token" default, meaning anyone who reads auth.py on
+      # GitHub can authenticate to every protected endpoint in production.
+      # Set this to a long random secret in the Render dashboard — the same
+      # value that is set for the frontend service below.
+      - key: AEGISCARE_TOKEN
+        sync: false   # set manually in Render dashboard — must match frontend value
+
+      # ALLOWED_ORIGINS must list your actual frontend domain(s).
+      # A wildcard ("*") allows any website to make cross-origin requests
+      # to this API, which combined with unauthenticated endpoints means
+      # the entire API is open to the public internet.
+      # Example: "https://aegiscare.onrender.com,https://app.aegiscare.io"
+      - key: ALLOWED_ORIGINS
+        sync: false   # set manually in Render dashboard
+
+    healthCheckPath: /health
+
+  # ---------------------------------------------------------------
+  # Bug 4 fix: frontend service was missing entirely from render.yaml.
+  # Without this block the Streamlit UI is never deployed on Render.
+  # ---------------------------------------------------------------
+  - type: web
+    name: aegiscare-frontend
+    runtime: python
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: streamlit run frontend/app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    envVars:
+      - key: APP_ENV
+        value: production
+
+      # Point the frontend at the deployed backend.
+      # Set this to the Render URL of the aegiscare-backend service,
+      # e.g. https://aegiscare-backend.onrender.com
+      - key: BACKEND_URL
+        sync: false   # set manually in Render dashboard
+
+      # Static bearer token used by the frontend API client.
+      # Must match what the backend accepts until real Supabase JWT
+      # auth is implemented (see auth.py TODO).
+      - key: AEGISCARE_TOKEN
+        sync: false   # set manually in Render dashboard
+
+      # Required so that "from frontend.xxx import ..." resolves correctly
+      # when Streamlit runs frontend/app.py from the repo root.
+      - key: PYTHONPATH
+        value: /opt/render/project/src
+
+    healthCheckPath: /_stcore/health

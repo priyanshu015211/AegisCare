@@ -1,0 +1,23 @@
+# Core
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.10.6
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+python-multipart==0.0.9
+loguru==0.7.2
+httpx>=0.24.0
+
+# Database
+supabase>=2.4.0
+
+# AI — use google-genai (google-generativeai is deprecated/EOL)
+google-genai>=1.10.0
+
+# Frontend
+streamlit>=1.35.0
+plotly>=5.20.0       # used by dashboard.py and analytics.py
+pandas>=2.0.0        # used by dashboard.py and analytics.py
+
+# Voice  (comment out if not using voice features)
+# faster-whisper==1.0.3
