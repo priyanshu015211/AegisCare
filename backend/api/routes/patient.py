@@ -75,20 +75,25 @@ async def update_patient(
         )
 
         # Run drift detection on the accumulated symptom history
+        # T-002: pass previous_severity so the engine can escalate progressively
+        previous_severity = result.get("severity", "green")
         drift_result = await drift_service.detect_drift(
-            symptoms_history=result.get("all_symptoms", [request.new_symptom])
+            symptoms_history=result.get("all_symptoms", [request.new_symptom]),
+            previous_severity=previous_severity,
         )
         if drift_result["drift_detected"]:
             log.warning(
                 f"Drift detected for patient {request.patient_id}: "
-                f"escalation_risk={drift_result['escalation_risk']}"
+                f"type={drift_result.get('drift_type')}, "
+                f"risk={drift_result['escalation_risk']}, "
+                f"{previous_severity} -> {drift_result.get('new_severity')}"
             )
 
         return PatientUpdateResponse(
             patient_id=result["patient_id"],
             new_symptom=result["new_symptom"],
             updated_risk_score=result["updated_risk_score"],
-            severity=result["severity"],
+            severity=drift_result.get("new_severity", result["severity"]),
             message=result["message"],
         )
     except Exception as e:
