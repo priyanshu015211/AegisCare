@@ -8,14 +8,14 @@ from frontend.pages import (
     patient_triage,
     emergency_center,
     coordination_dashboard,
-    analytics
+    analytics,
 )
 
 st.set_page_config(
     page_title="AegisCare",
     page_icon="🏥",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 apply_custom_css()
